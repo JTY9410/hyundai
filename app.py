@@ -33,6 +33,7 @@ import functools
 
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DEFAULT_PASSWORD_HASH_METHOD = os.environ.get('WERKZEUG_PREFERRED_HASH', 'pbkdf2:sha256')
 
 # 한국 시간대 설정
 try:
@@ -534,7 +535,7 @@ def define_models():
             )
 
             def set_admin_password(self, password: str) -> None:
-                self.admin_password_hash = generate_password_hash(password)
+                self.admin_password_hash = generate_password_hash(password, method=DEFAULT_PASSWORD_HASH_METHOD)
 
             def check_admin_password(self, password: str) -> bool:
                 return check_password_hash(self.admin_password_hash, password)
@@ -582,7 +583,7 @@ def define_models():
             partner_group = db.relationship('PartnerGroup', backref='members')
 
             def set_password(self, password: str) -> None:
-                self.password_hash = generate_password_hash(password)
+                self.password_hash = generate_password_hash(password, method=DEFAULT_PASSWORD_HASH_METHOD)
 
             def check_password(self, password: str) -> bool:
                 return check_password_hash(self.password_hash, password)
@@ -714,6 +715,14 @@ def define_models():
 
             member = db.relationship('Member', backref='virtual_accounts')
             partner_group = db.relationship('PartnerGroup', backref='virtual_accounts')
+        
+        # Make models available globally
+        globals()['PartnerGroup'] = PartnerGroup
+        globals()['Member'] = Member
+        globals()['InsuranceApplication'] = InsuranceApplication
+        globals()['DepositHistory'] = DepositHistory
+        globals()['PointAdjustment'] = PointAdjustment
+        globals()['VirtualAccount'] = VirtualAccount
         
         _model_classes_defined = True
         print("✓ Models defined successfully")

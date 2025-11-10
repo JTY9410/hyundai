@@ -48,7 +48,8 @@ def test_database_connection():
         print("\n2. 데이터 저장 테스트:")
         try:
             # 테스트용 파트너그룹 생성 (중복 방지)
-            test_name = f"테스트그룹_{datetime.now(KST).strftime('%Y%m%d%H%M%S')}"
+            timestamp = datetime.now(KST).strftime('%Y%m%d%H%M%S')
+            test_name = f"테스트그룹_{timestamp}"
             existing = db.session.query(PartnerGroup).filter_by(name=test_name).first()
             if existing:
                 print(f"   테스트 데이터가 이미 존재합니다. 삭제 중...")
@@ -58,8 +59,8 @@ def test_database_connection():
             # 테스트 파트너그룹 생성
             test_group = PartnerGroup(
                 name=test_name,
-                admin_username=f"test_admin_{datetime.now(KST).strftime('%Y%m%d%H%M%S')}",
-                business_number="123-45-67890",
+                admin_username=f"test_admin_{timestamp}",
+                business_number=f"123-45-{timestamp[-6:]}",
                 representative="테스트대표",
                 phone="02-1234-5678",
                 address="테스트주소",
