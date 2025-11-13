@@ -5885,7 +5885,13 @@ def create_deposit_request():
             return jsonify({'success': False, 'message': '파트너그룹 정보를 확인할 수 없습니다.'}), 400
 
         data = request.get_json(silent=True) or request.form
-        amount_raw = (data.get('amount') or '').replace(',', '').strip()
+        raw_amount_value = data.get('amount')
+        if isinstance(raw_amount_value, str):
+            amount_raw = raw_amount_value.replace(',', '').strip()
+        elif isinstance(raw_amount_value, (int, float)):
+            amount_raw = str(int(raw_amount_value))
+        else:
+            amount_raw = ''
 
         try:
             amount = int(amount_raw)
