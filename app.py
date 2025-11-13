@@ -3415,7 +3415,7 @@ def admin_partner_groups():
                             
                             # 파일이 실제로 저장되었는지 확인
                             if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                                registration_cert_path = os.path.join('uploads', new_filename)
+                                registration_cert_path = new_filename
                                 print(f"Registration cert saved successfully: {registration_cert_path}")
                             else:
                                 print(f"ERROR: Registration cert file was not saved properly. Path: {filepath}")
@@ -3642,9 +3642,27 @@ def admin_partner_groups():
                                         if file_ext in allowed_extensions:
                                             timestamp = datetime.now(KST).strftime('%Y%m%d_%H%M%S')
                                             new_filename = f"reg_{group.business_number}_{timestamp}{file_ext}"
+                                            
+                                            # 업로드 디렉토리 확인 및 생성
+                                            os.makedirs(UPLOAD_DIR, exist_ok=True)
+                                            
                                             filepath = os.path.join(UPLOAD_DIR, new_filename)
                                             file.save(filepath)
-                                            group.registration_cert_path = os.path.join('uploads', new_filename)
+                                            
+                                            # 파일이 실제로 저장되었는지 확인
+                                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                                                group.registration_cert_path = new_filename
+                                                try:
+                                                    import sys
+                                                    sys.stderr.write(f"Registration cert updated: {new_filename}\n")
+                                                except Exception:
+                                                    pass
+                                            else:
+                                                try:
+                                                    import sys
+                                                    sys.stderr.write(f"Registration cert save failed: {filepath}\n")
+                                                except Exception:
+                                                    pass
                                     except Exception as e:
                                         try:
                                             import sys
@@ -3670,18 +3688,33 @@ def admin_partner_groups():
                                             os.makedirs(partner_logo_dir, exist_ok=True)
                                             filepath = os.path.join(partner_logo_dir, new_filename)
                                             file.save(filepath)
-                                            group.logo_path = os.path.join('partner_logos', new_filename)
                                             
-                                            # 파트너그룹별 로고 파일도 생성 (group_{id}_logo.png)
-                                            try:
-                                                group_logo_filename = f"group_{group.id}_logo{file_ext}"
-                                                group_logo_path = os.path.join(partner_logo_dir, group_logo_filename)
-                                                file.seek(0)  # 파일 포인터 리셋
-                                                file.save(group_logo_path)
-                                            except Exception as e:
+                                            # 파일이 실제로 저장되었는지 확인
+                                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                                                group.logo_path = os.path.join('partner_logos', new_filename)
+                                                
+                                                # 파트너그룹별 로고 파일도 생성 (group_{id}_logo.png)
+                                                try:
+                                                    group_logo_filename = f"group_{group.id}_logo{file_ext}"
+                                                    group_logo_path = os.path.join(partner_logo_dir, group_logo_filename)
+                                                    file.seek(0)  # 파일 포인터 리셋
+                                                    file.save(group_logo_path)
+                                                    
+                                                    try:
+                                                        import sys
+                                                        sys.stderr.write(f"Logo updated: {group.logo_path}\n")
+                                                    except Exception:
+                                                        pass
+                                                except Exception as e:
+                                                    try:
+                                                        import sys
+                                                        sys.stderr.write(f"Group logo copy error: {e}\n")
+                                                    except Exception:
+                                                        pass
+                                            else:
                                                 try:
                                                     import sys
-                                                    sys.stderr.write(f"Group logo copy error: {e}\n")
+                                                    sys.stderr.write(f"Logo save failed: {filepath}\n")
                                                 except Exception:
                                                     pass
                                     except Exception as e:
