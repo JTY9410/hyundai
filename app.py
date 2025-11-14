@@ -501,7 +501,7 @@ _model_classes_defined = False
 
 def define_models():
     """Define SQLAlchemy models - called once when db is available"""
-    global PartnerGroup, Member, InsuranceApplication, DepositHistory, VirtualAccount, _model_classes_defined
+    global PartnerGroup, Member, InsuranceApplication, DepositHistory, DepositRequest, VirtualAccount, _model_classes_defined
     
     if _model_classes_defined or db is None:
         return
@@ -761,6 +761,7 @@ def define_models():
         globals()['Member'] = Member
         globals()['InsuranceApplication'] = InsuranceApplication
         globals()['DepositHistory'] = DepositHistory
+        globals()['DepositRequest'] = DepositRequest
         globals()['PointAdjustment'] = PointAdjustment
         globals()['VirtualAccount'] = VirtualAccount
         
