@@ -5537,6 +5537,35 @@ def partner_admin_point_management():
         flash('페이지 로드 중 오류가 발생했습니다.', 'danger')
         return redirect(url_for('partner_dashboard'))
 
+@app.route('/partner/admin/deposit-request-count')
+def partner_admin_deposit_request_count():
+    """입금신청 개수 확인 API (알림용)"""
+    try:
+        ensure_initialized()
+        
+        # 파트너그룹 관리자만 접근 가능
+        if 'user_type' not in session or session['user_type'] != 'partner_admin':
+            return jsonify({'count': 0, 'error': 'Unauthorized'}), 401
+        
+        partner_group_id = session.get('partner_group_id')
+        if not partner_group_id:
+            return jsonify({'count': 0, 'error': 'Partner group not found'}), 400
+        
+        count = db.session.query(DepositRequest).filter(
+            DepositRequest.partner_group_id == partner_group_id,
+            DepositRequest.status == 'requested'
+        ).count()
+        
+        return jsonify({'count': count, 'success': True})
+    
+    except Exception as e:
+        try:
+            import sys
+            sys.stderr.write(f"Deposit request count error: {e}\n")
+        except Exception:
+            pass
+        return jsonify({'count': 0, 'error': str(e)}), 500
+
 @app.route('/partner/admin/point-history/<int:member_id>')
 def partner_admin_point_history(member_id):
     """회원의 포인트 입출금 세부내역 조회"""
