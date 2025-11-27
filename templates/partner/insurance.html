@@ -213,8 +213,11 @@
           <tbody class="bg-white/50 divide-y divide-gray-200">
             {% for app in applications %}
             <tr class="hover:bg-blue-50/50 transition-colors duration-200" id="row-{{ app.id }}">
-              {% if edit_id == app.id|string and not app.start_at %}
-              <!-- Edit Mode (가입 전까지만) -->
+              {% set user_is_admin = current_user.role in ['admin', 'partner_admin'] if current_user.role else False %}
+              {% set is_member = current_user.role == 'member' if current_user.role else False %}
+              {% set can_edit_in_mode = (not app.start_at or user_is_admin or is_partner_admin) %}
+              {% if edit_id == app.id|string and can_edit_in_mode %}
+              <!-- Edit Mode (회원 권한은 가입시간이 없을 때만 수정 가능, 관리자는 가입 후에도 수정 가능) -->
               <form method="post" id="edit-form-{{ app.id }}">
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="app_id" value="{{ app.id }}">
@@ -228,11 +231,23 @@
                          value="{{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {{ app.start_at.strftime('%Y-%m-%d %H:%M:%S') if app.start_at else '-' }}
+                <td class="px-4 py-3 whitespace-nowrap">
+                  {% if user_is_admin or is_partner_admin %}
+                    <input type="datetime-local" name="start_at" 
+                           value="{{ app.start_at.strftime('%Y-%m-%dT%H:%M') if app.start_at else '' }}"
+                           class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                  {% else %}
+                    <span class="text-sm text-gray-900">{{ app.start_at.strftime('%Y-%m-%d %H:%M:%S') if app.start_at else '-' }}</span>
+                  {% endif %}
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {{ app.end_at.strftime('%Y-%m-%d %H:%M:%S') if app.end_at else '-' }}
+                <td class="px-4 py-3 whitespace-nowrap">
+                  {% if user_is_admin or is_partner_admin %}
+                    <input type="datetime-local" name="end_at" 
+                           value="{{ app.end_at.strftime('%Y-%m-%dT%H:%M') if app.end_at else '' }}"
+                           class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                  {% else %}
+                    <span class="text-sm text-gray-900">{{ app.end_at.strftime('%Y-%m-%d %H:%M:%S') if app.end_at else '-' }}</span>
+                  {% endif %}
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm">
                   {% if app.start_at %}
@@ -268,8 +283,23 @@
                     <span class="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">가입</span>
                   {% elif app.status == '종료' %}
                     <span class="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">종료</span>
+                  {% elif app.status == 'API오류' %}
+                    <div class="flex items-center gap-2">
+                      <span class="px-2 py-1 text-xs font-semibold bg-red-100 text-red-800 rounded-full">API오류</span>
+                      <form method="post" action="{{ url_for('partner_retry_insurance_api', application_id=app.id) }}" class="inline">
+                        <button type="submit" class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors duration-200" title="API 재호출">
+                          재호출
+                        </button>
+                      </form>
+                    </div>
                   {% else %}
                     <span class="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">{{ app.status }}</span>
+                  {% endif %}
+                  {% set api_msg = app.api_response_message|default('') %}
+                  {% if api_msg %}
+                    <span class="text-xs text-gray-600 mt-1 block" title="응답코드: {{ app.api_response_code|default('-') }}">
+                      {{ api_msg }}
+                    </span>
                   {% endif %}
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
@@ -357,14 +387,19 @@
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-900 break-words">{{ app.memo or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm">
-                {% if not app.start_at %}
-                <!-- 가입 전까지만 작업 버튼 표시 -->
+                {% set user_is_admin = current_user.role in ['admin', 'partner_admin'] if current_user.role else False %}
+                {% set is_member = current_user.role == 'member' if current_user.role else False %}
+                {% set can_edit = is_partner_admin or user_is_admin or (app.created_by_member_id == current_user.id) %}
+                {% set can_modify = (not app.start_at or user_is_admin or is_partner_admin) and can_edit %}
+                {% if can_modify %}
+                <!-- 회원 권한은 가입시간이 없을 때만 수정/삭제 가능, 관리자는 가입 후에도 수정 가능 -->
                 <div class="flex items-center space-x-1">
                   <a href="{{ url_for('partner_insurance', edit_id=app.id, start_date=start_date.strftime('%Y-%m-%d') if start_date else '', end_date=end_date.strftime('%Y-%m-%d') if end_date else '') }}"
                      class="inline-flex items-center px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
                      title="수정">
                     <i class="bi bi-pencil mr-1"></i>수정
                   </a>
+                  {% if not app.start_at or user_is_admin or is_partner_admin %}
                   <form method="post" class="inline-block" onsubmit="return confirm('정말 삭제하시겠습니까?');">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="app_id" value="{{ app.id }}">
@@ -374,9 +409,14 @@
                       <i class="bi bi-trash mr-1"></i>삭제
                     </button>
                   </form>
+                  {% endif %}
                 </div>
                 {% else %}
-                <span class="text-gray-400 text-xs">-</span>
+                  {% if app.start_at and is_member and not is_partner_admin and not user_is_admin %}
+                    <span class="text-gray-400 text-xs">가입완료</span>
+                  {% else %}
+                    <span class="text-gray-400 text-xs">-</span>
+                  {% endif %}
                 {% endif %}
               </td>
               {% endif %}

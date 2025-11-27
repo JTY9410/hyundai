@@ -351,7 +351,13 @@ if app is not None:
         if not dt:
             return ''
         try:
-            local_dt = dt.astimezone(KST)
+            # timezone-aware인지 확인
+            if dt.tzinfo is None:
+                # timezone-naive인 경우 KST로 가정
+                local_dt = dt.replace(tzinfo=KST)
+            else:
+                # timezone-aware인 경우 KST로 변환
+                local_dt = dt.astimezone(KST)
             return local_dt.strftime('%Y-%m-%dT%H:%M')
         except Exception:
             return ''
@@ -624,7 +630,7 @@ def define_models():
                 Index('idx_ins_app_start', 'start_at'),
                 Index('idx_ins_app_car_plate', 'car_plate'),
                 Index('idx_ins_app_vin', 'vin'),
-                CheckConstraint("status IN ('신청','가입','종료')", name='ck_ins_app_status'),
+                CheckConstraint("status IN ('신청','가입','종료','API오류')", name='ck_ins_app_status'),
             )
 
             # 관계 설정
@@ -637,56 +643,20 @@ def define_models():
                 end_at_local = _ensure_aware(self.end_at)
                 created_at_local = _ensure_aware(self.created_at)
 
-                # 가입시간 미수신 시 신청 30분 후 자동으로 가입 처리
-                if start_at_local is None:
-                    base_time = created_at_local or (now - timedelta(minutes=30))
-                    fallback_activation_time = base_time + timedelta(minutes=30)
-                    if now >= fallback_activation_time:
-                        self.start_at = fallback_activation_time
-                        start_at_local = fallback_activation_time
-                        self.end_at = fallback_activation_time + timedelta(days=30)
-                        end_at_local = _ensure_aware(self.end_at)
-
+                # 가입시간은 현대해상 API 응답 코드 '00'이 올 때만 설정됨
+                # 자동 가입 로직 제거 - API 응답을 기다려야 함
+                
                 if start_at_local is not None:
                     if end_at_local is None:
                         self.end_at = start_at_local + timedelta(days=30)
                         end_at_local = _ensure_aware(self.end_at)
 
                     if end_at_local and now >= end_at_local:
+                        # 종료시간이 지났으면 종료 상태로 변경
                         self.status = '종료'
-                    else:
-                        if self.status != '가입':
-                            self.status = '가입'
-                        if not self.point_deducted and self.created_by_member is not None:
-                            member = self.created_by_member
-                            if member:
-                                if getattr(member, 'settlement_method', '포인트') != '후불정산':
-                                    current_balance = member.point_balance or 0
-                                    deducted_amount = min(current_balance, 9500)
-                                    
-                                    if deducted_amount > 0:
-                                        member.point_balance = current_balance - deducted_amount
-                                        
-                                        # 포인트 차감 내역을 PointAdjustment 테이블에 기록
-                                        try:
-                                            adjustment = PointAdjustment(
-                                                member_id=member.id,
-                                                partner_group_id=member.partner_group_id or self.partner_group_id,
-                                                decrease_amount=deducted_amount,
-                                                increase_amount=0,
-                                                change_amount=-deducted_amount,
-                                                note=f'보험신청 포인트 차감 (차량번호: {self.car_plate})'
-                                            )
-                                            db.session.add(adjustment)
-                                        except Exception as e:
-                                            # 로깅만 하고 계속 진행
-                                            try:
-                                                import sys
-                                                sys.stderr.write(f"Point adjustment logging failed: {e}\n")
-                                            except Exception:
-                                                pass
-                                    
-                                    self.point_deducted = True
+                    # start_at이 있어도 상태는 API 응답에 따라 결정되므로 여기서 자동 변경하지 않음
+                    # API 응답 코드가 '00'일 때만 가입 상태로 변경됨
+                    # 포인트 차감은 API 응답 코드 '00'일 때 또는 가입시간이 수기로 입력될 때 처리됨
                 else:
                     if end_at_local and now >= end_at_local:
                         self.status = '종료'
@@ -1004,6 +974,45 @@ def init_db_and_assets():
                         print("Added point_deducted column to insurance_application table")
                     except Exception as e:
                         print(f"Warning: Failed to add point_deducted: {e}")
+            
+            # InsuranceApplication 테이블: API 응답 필드 추가 (SQLite)
+            if 'api_response_code' not in cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_code VARCHAR(32)"))
+                        safe_commit()
+                        print("Added api_response_code column to insurance_application table")
+                    except Exception as e:
+                        print(f"Warning: Failed to add api_response_code: {e}")
+            
+            if 'api_response_message' not in cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_message VARCHAR(512)"))
+                        safe_commit()
+                        print("Added api_response_message column to insurance_application table")
+                    except Exception as e:
+                        print(f"Warning: Failed to add api_response_message: {e}")
+            
+            if 'api_requested_at' not in cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_requested_at DATETIME"))
+                        safe_commit()
+                        print("Added api_requested_at column to insurance_application table")
+                    except Exception as e:
+                        print(f"Warning: Failed to add api_requested_at: {e}")
+            
+            # 상태 제약 조건 업데이트 (기존 'API미호출' 상태를 'API오류'로 변경)
+            # SQLite는 제약 조건을 직접 수정할 수 없으므로, 기존 데이터만 업데이트
+            try:
+                # 기존 'API미호출' 상태를 'API오류'로 업데이트
+                result = db.session.execute(text("UPDATE insurance_application SET status = 'API오류' WHERE status = 'API미호출'"))
+                if result.rowcount > 0:
+                    safe_commit()
+                    print(f"Updated {result.rowcount} records from API미호출 to API오류")
+            except Exception as e:
+                print(f"Warning: Failed to update status: {e}")
         elif 'postgresql' in db_uri or 'postgres' in db_uri:
             # PostgreSQL: 컬럼 존재 여부 확인 후 추가
             inspector = inspect(db.engine)
@@ -1098,6 +1107,45 @@ def init_db_and_assets():
                         print("Added point_deducted column to insurance_application table (PostgreSQL)")
                     except Exception as e:
                         print(f"Warning: Failed to add point_deducted: {e}")
+            
+            # InsuranceApplication 테이블: API 응답 필드 추가 (PostgreSQL)
+            if 'api_response_code' not in ins_app_cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_code VARCHAR(32)"))
+                        safe_commit()
+                        print("Added api_response_code column to insurance_application table (PostgreSQL)")
+                    except Exception as e:
+                        print(f"Warning: Failed to add api_response_code: {e}")
+            
+            if 'api_response_message' not in ins_app_cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_message VARCHAR(512)"))
+                        safe_commit()
+                        print("Added api_response_message column to insurance_application table (PostgreSQL)")
+                    except Exception as e:
+                        print(f"Warning: Failed to add api_response_message: {e}")
+            
+            if 'api_requested_at' not in ins_app_cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_requested_at TIMESTAMP WITH TIME ZONE"))
+                        safe_commit()
+                        print("Added api_requested_at column to insurance_application table (PostgreSQL)")
+                    except Exception as e:
+                        print(f"Warning: Failed to add api_requested_at: {e}")
+            
+            # 상태 제약 조건 업데이트 (기존 'API미호출' 상태를 'API오류'로 변경)
+            # PostgreSQL은 제약 조건을 직접 수정할 수 없으므로, 기존 데이터만 업데이트
+            try:
+                # 기존 'API미호출' 상태를 'API오류'로 업데이트
+                result = db.session.execute(text("UPDATE insurance_application SET status = 'API오류' WHERE status = 'API미호출'"))
+                if result.rowcount > 0:
+                    safe_commit()
+                    print(f"Updated {result.rowcount} records from API미호출 to API오류 (PostgreSQL)")
+            except Exception as e:
+                print(f"Warning: Failed to update status: {e}")
     except Exception as e:
         print(f"Warning: Schema migration failed: {e}")
         import traceback
@@ -1278,11 +1326,12 @@ def safe_commit():
         return True
     except Exception as e:
         error_str = str(e)
+        error_type = type(e).__name__
         try:
             import sys
             import traceback
-            sys.stderr.write(f"DB commit error: {error_str}\n")
-            sys.stderr.write(f"DB commit traceback: {traceback.format_exc()}\n")
+            sys.stderr.write(f"safe_commit error: {error_type}: {error_str}\n")
+            sys.stderr.write(f"safe_commit traceback: {traceback.format_exc()}\n")
         except Exception:
             pass
         
@@ -1306,6 +1355,15 @@ def safe_commit():
             try:
                 import sys
                 sys.stderr.write(f"SQLite constraint error: {error_str}\n")
+                # 어떤 필드에서 오류가 발생했는지 파악
+                if 'NOT NULL constraint failed' in error_str:
+                    # 테이블명과 컬럼명 추출 시도
+                    if 'insurance_application' in error_str.lower():
+                        sys.stderr.write("NOT NULL constraint failed in insurance_application table\n")
+                        if 'partner_group_id' in error_str:
+                            sys.stderr.write("ERROR: partner_group_id is NULL\n")
+                        elif 'desired_start_date' in error_str:
+                            sys.stderr.write("ERROR: desired_start_date is NULL\n")
             except Exception:
                 pass
             return False
@@ -3110,14 +3168,21 @@ def parse_datetime(value: str):
     if not value:
         return None
     try:
-        dt = datetime.strptime(value, '%Y-%m-%d %H:%M')
+        # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
+        dt = datetime.strptime(value, '%Y-%m-%dT%H:%M')
         return _ensure_aware(dt)
     except ValueError:
         try:
-            dt = datetime.strptime(value, '%Y-%m-%d')
+            # 일반 datetime 형식: 'YYYY-MM-DD HH:MM'
+            dt = datetime.strptime(value, '%Y-%m-%d %H:%M')
             return _ensure_aware(dt)
-        except Exception:
-            return None
+        except ValueError:
+            try:
+                # 날짜만: 'YYYY-MM-DD'
+                dt = datetime.strptime(value, '%Y-%m-%d')
+                return _ensure_aware(dt)
+            except Exception:
+                return None
     except Exception:
         return None
 
@@ -3139,6 +3204,62 @@ def get_hyundai_api_response_message(response_code: str) -> str:
         '9999': '알 수 없는 오류가 발생했습니다.',
     }
     return response_messages.get(response_code, f'응답 코드: {response_code}')
+
+
+def deduct_points_for_insurance(application: InsuranceApplication) -> bool:
+    """보험 가입 시 포인트 차감 처리"""
+    if application.point_deducted:
+        return True  # 이미 차감됨
+    
+    if not application.created_by_member_id:
+        return False  # 회원 정보 없음
+    
+    try:
+        member = db.session.get(Member, application.created_by_member_id)
+        if not member:
+            return False
+        
+        # 후불정산 방식이면 포인트 차감하지 않음
+        if getattr(member, 'settlement_method', '포인트') == '후불정산':
+            return True  # 후불정산이므로 차감할 필요 없음
+        
+        current_balance = member.point_balance or 0
+        deducted_amount = min(current_balance, 9500)
+        
+        if deducted_amount > 0:
+            member.point_balance = current_balance - deducted_amount
+            
+            # 포인트 차감 내역을 PointAdjustment 테이블에 기록
+            try:
+                adjustment = PointAdjustment(
+                    member_id=member.id,
+                    partner_group_id=member.partner_group_id or application.partner_group_id,
+                    decrease_amount=deducted_amount,
+                    increase_amount=0,
+                    change_amount=-deducted_amount,
+                    note=f'보험신청 포인트 차감 (차량번호: {application.car_plate})'
+                )
+                db.session.add(adjustment)
+            except Exception as e:
+                try:
+                    import sys
+                    sys.stderr.write(f"Point adjustment logging failed: {e}\n")
+                except Exception:
+                    pass
+            
+            application.point_deducted = True
+            return True
+        else:
+            # 포인트가 부족해도 차감 완료로 표시 (나중에 충전 후 차감 가능)
+            application.point_deducted = True
+            return True
+    except Exception as e:
+        try:
+            import sys
+            sys.stderr.write(f"Point deduction failed: {e}\n")
+        except Exception:
+            pass
+        return False
 
 
 def submit_insurance_to_hyundai(application: InsuranceApplication) -> dict:
@@ -3239,6 +3360,84 @@ def submit_insurance_to_hyundai(application: InsuranceApplication) -> dict:
         }
 
 
+@app.route('/insurance/retry-api/<int:application_id>', methods=['POST'])
+@login_required
+def retry_insurance_api(application_id):
+    """보험 신청 API 재호출"""
+    try:
+        application = db.session.get(InsuranceApplication, application_id)
+        if not application:
+            flash('신청 정보를 찾을 수 없습니다.', 'danger')
+            return redirect(url_for('insurance'))
+        
+        # 권한 확인: 본인이 신청한 것이거나 관리자
+        if hasattr(current_user, 'id') and application.created_by_member_id != current_user.id:
+            if not hasattr(current_user, 'role') or current_user.role != 'admin':
+                flash('권한이 없습니다.', 'warning')
+                return redirect(url_for('insurance'))
+        
+        # API 재호출
+        api_result = submit_insurance_to_hyundai(application)
+        
+        # API 응답 필드 업데이트
+        if hasattr(application, 'api_response_code'):
+            application.api_response_code = api_result.get('response_code', '')
+        if hasattr(application, 'api_response_message'):
+            application.api_response_message = api_result.get('response_message', '')
+        if hasattr(application, 'api_requested_at'):
+            application.api_requested_at = datetime.now(KST)
+        
+        # 응답 코드에 따라 상태 업데이트
+        response_code = api_result.get('response_code', '')
+        if api_result.get('success', False) and response_code.startswith('00'):
+            # API 호출 성공하고 응답 코드가 '00'으로 시작하면 가입시간 설정 (desired_start_date부터 시작)
+            if not application.start_at:
+                # desired_start_date를 datetime으로 변환 (시간은 00:00:00)
+                if application.desired_start_date:
+                    application.start_at = datetime.combine(application.desired_start_date, datetime.min.time(), tzinfo=KST)
+                else:
+                    application.start_at = datetime.now(KST)
+                if not application.end_at:
+                    application.end_at = application.start_at + timedelta(days=30)
+            # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
+            if response_code == '0002':
+                application.status = '가입'
+            else:
+                application.status = '신청'
+            
+            # API 응답 코드가 '00'일 때 포인트 차감
+            deduct_points_for_insurance(application)
+        elif not api_result.get('success', False):
+            # API 호출 실패 시 'API오류' 상태로 설정
+            application.status = 'API오류'
+        elif response_code.startswith('1'):
+            # 입력 오류 - 'API오류' 상태로 설정
+            application.status = 'API오류'
+        elif response_code.startswith('2'):
+            # 중복/이미 가입 - 'API오류' 상태로 설정
+            application.status = 'API오류'
+        else:
+            # 기타 오류는 'API오류' 상태로 설정
+            application.status = 'API오류'
+        
+        safe_commit()
+        
+        if api_result.get('success'):
+            flash(f'API 재호출이 완료되었습니다. {api_result.get("response_message", "")}', 'success')
+        else:
+            flash(f'API 재호출이 실패했습니다. {api_result.get("response_message", "")}', 'warning')
+    except Exception as e:
+        try:
+            import sys
+            import traceback
+            sys.stderr.write(f"Retry API error: {e}\n{traceback.format_exc()}\n")
+        except Exception:
+            pass
+        flash('API 재호출 중 오류가 발생했습니다.', 'danger')
+    
+    return redirect(url_for('insurance'))
+
+
 @app.route('/insurance', methods=['GET', 'POST'])
 @login_required
 def insurance():
@@ -3251,9 +3450,14 @@ def insurance():
             row_id = request.form.get('row_id')
             if row_id:
                 row = db.session.get(InsuranceApplication, int(row_id))
-                if row and row.created_by_member_id == current_user.id:
+                # 관리자(admin) 또는 파트너 관리자(partner_admin)는 모든 신청을 수정/삭제 가능
+                is_admin = hasattr(current_user, 'role') and current_user.role in ['admin', 'partner_admin']
+                can_modify = row and (is_admin or row.created_by_member_id == current_user.id)
+                if can_modify:
                     if action == 'delete':
-                        if not row.start_at:  # 가입 전까지만 삭제 가능
+                        # 관리자는 가입 후에도 삭제 가능
+                        is_admin = hasattr(current_user, 'role') and current_user.role in ['admin', 'partner_admin']
+                        if not row.start_at or is_admin:  # 가입 전까지만 삭제 가능 (관리자는 가입 후에도 삭제 가능)
                             try:
                                 row_id = row.id
                                 db.session.delete(row)
@@ -3295,10 +3499,19 @@ def insurance():
                                 except Exception:
                                     pass
                                 flash('삭제 처리 중 오류가 발생했습니다.', 'danger')
+                            return redirect(url_for('insurance', 
+                                                   start_date=request.args.get('start_date'),
+                                                   end_date=request.args.get('end_date')))
                         else:
-                            flash('가입이 시작된 신청은 삭제할 수 없습니다.', 'warning')
+                            if not is_admin:
+                                flash('가입이 시작된 신청은 삭제할 수 없습니다.', 'warning')
+                            return redirect(url_for('insurance', 
+                                                   start_date=request.args.get('start_date'),
+                                                   end_date=request.args.get('end_date')))
                     elif action == 'save':
-                        if not row.start_at:  # 가입 전까지만 수정 가능
+                        # 관리자는 가입 후에도 수정 가능
+                        is_admin = hasattr(current_user, 'role') and current_user.role in ['admin', 'partner_admin']
+                        if not row.start_at or is_admin:  # 가입 전까지만 수정 가능 (관리자는 가입 후에도 수정 가능)
                             try:
                                 row_id = row.id
                                 # 편집 모드에서 온 경우에만 모든 필드 업데이트
@@ -3308,6 +3521,41 @@ def insurance():
                                     row.vin = request.form.get('vin', '').strip()
                                     row.car_name = request.form.get('car_name', '').strip()
                                     row.car_registered_at = parse_date(request.form.get('car_registered_at'))
+                                
+                                # 관리자는 가입시간과 종료시간도 수정 가능
+                                if is_admin:
+                                    start_at_str = request.form.get('start_at', '').strip()
+                                    if start_at_str:
+                                        try:
+                                            start_at_was_none = row.start_at is None
+                                            # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
+                                            row.start_at = datetime.strptime(start_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                                            # 가입시간이 수기로 입력될 때 포인트 차감
+                                            if start_at_was_none:
+                                                deduct_points_for_insurance(row)
+                                        except (ValueError, TypeError) as e:
+                                            try:
+                                                import sys
+                                                sys.stderr.write(f"Error parsing start_at: {e}\n")
+                                            except Exception:
+                                                pass
+                                            # 파싱 실패 시 기존 값 유지
+                                            pass
+                                    
+                                    end_at_str = request.form.get('end_at', '').strip()
+                                    if end_at_str:
+                                        try:
+                                            # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
+                                            row.end_at = datetime.strptime(end_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                                        except (ValueError, TypeError) as e:
+                                            try:
+                                                import sys
+                                                sys.stderr.write(f"Error parsing end_at: {e}\n")
+                                            except Exception:
+                                                pass
+                                            # 파싱 실패 시 기존 값 유지
+                                            pass
+                                
                                 # 비고는 항상 업데이트 가능
                                 row.memo = request.form.get('memo', '').strip()
                                 
@@ -3352,9 +3600,22 @@ def insurance():
                                 except Exception:
                                     pass
                                 flash('저장 처리 중 오류가 발생했습니다.', 'danger')
+                            return redirect(url_for('insurance', 
+                                                   start_date=request.args.get('start_date'),
+                                                   end_date=request.args.get('end_date')))
                         else:
-                            flash('가입이 시작된 신청은 수정할 수 없습니다.', 'warning')
-            return redirect(url_for('insurance'))
+                            # 회원 권한은 가입시간이 있으면 수정 불가능
+                            is_member = hasattr(current_user, 'role') and current_user.role == 'member'
+                            if is_member and row.start_at:
+                                flash('가입시간이 설정된 신청은 수정할 수 없습니다.', 'warning')
+                            elif not is_admin:
+                                flash('가입이 시작된 신청은 수정할 수 없습니다.', 'warning')
+                            return redirect(url_for('insurance', 
+                                                   start_date=request.args.get('start_date'),
+                                                   end_date=request.args.get('end_date')))
+            return redirect(url_for('insurance', 
+                                   start_date=request.args.get('start_date'),
+                                   end_date=request.args.get('end_date')))
         
         # 신규 가입
         desired_start_date = parse_date(request.form.get('desired_start_date'))
@@ -3380,8 +3641,68 @@ def insurance():
             flash(f"필수 항목을 입력해주세요: {', '.join(missing_fields)}", 'warning')
             return redirect(url_for('insurance'))
 
+        # partner_group_id 확인 (데이터베이스에서 직접 조회)
+        partner_group_id = None
+        try:
+            if hasattr(current_user, 'id') and current_user.id:
+                # 데이터베이스에서 최신 정보 조회
+                member = db.session.get(Member, current_user.id)
+                if member:
+                    partner_group_id = member.partner_group_id
+                    # current_user 객체도 업데이트
+                    if hasattr(current_user, 'partner_group_id'):
+                        current_user.partner_group_id = partner_group_id
+        except Exception as e:
+            try:
+                import sys
+                sys.stderr.write(f"Error getting partner_group_id: {e}\n")
+            except Exception:
+                pass
+        
+        if not partner_group_id:
+            flash('파트너그룹 정보를 찾을 수 없습니다. 관리자에게 문의해주세요.', 'danger')
+            return redirect(url_for('insurance'))
+        
+        # 중복 가입 체크: 같은 차량번호나 차대번호로 이미 가입되어 있고 종료시간이 남아있는지 확인
+        try:
+            now = datetime.now(KST)
+            existing_applications = db.session.query(InsuranceApplication).filter(
+                InsuranceApplication.partner_group_id == partner_group_id,
+                db.or_(
+                    InsuranceApplication.car_plate == car_plate,
+                    InsuranceApplication.vin == vin
+                ),
+                InsuranceApplication.status.in_(['신청', '가입']),
+                db.or_(
+                    InsuranceApplication.end_at.is_(None),
+                    InsuranceApplication.end_at > now
+                )
+            ).all()
+            
+            if existing_applications:
+                # 가장 최근 종료시간 찾기
+                latest_end_at = None
+                for app in existing_applications:
+                    if app.end_at and (latest_end_at is None or app.end_at > latest_end_at):
+                        latest_end_at = app.end_at
+                
+                if latest_end_at:
+                    end_date_str = latest_end_at.strftime('%Y-%m-%d %H:%M:%S')
+                    flash(f'({end_date_str}) 보험이 가입되어 있습니다.', 'warning')
+                else:
+                    flash('보험이 가입되어 있습니다.', 'warning')
+                return redirect(url_for('insurance'))
+        except Exception as e:
+            try:
+                import sys
+                sys.stderr.write(f"Error checking duplicate insurance: {e}\n")
+            except Exception:
+                pass
+            # 중복 체크 실패 시에도 진행 (안전을 위해)
+        
         try:
             app_row = InsuranceApplication(
+                partner_group_id=partner_group_id,
                 desired_start_date=desired_start_date,
                 insured_code=current_user.business_number or '',
                 contractor_code='부산자동차매매사업자조합',
@@ -3402,6 +3723,27 @@ def insurance():
             except Exception:
                 pass
             
+            # 커밋 전 데이터 검증
+            try:
+                # 필수 필드 재확인
+                if not app_row.partner_group_id:
+                    flash('파트너그룹 정보가 없습니다. 관리자에게 문의해주세요.', 'danger')
+                    db.session.rollback()
+                    return redirect(url_for('insurance'))
+                if not app_row.desired_start_date:
+                    flash('가입희망일자를 입력해주세요.', 'danger')
+                    db.session.rollback()
+                    return redirect(url_for('insurance'))
+            except Exception as validation_err:
+                try:
+                    import sys
+                    sys.stderr.write(f"Validation error: {validation_err}\n")
+                except Exception:
+                    pass
+                db.session.rollback()
+                flash('입력 정보를 확인해주세요.', 'danger')
+                return redirect(url_for('insurance'))
+            
             commit_success = safe_commit()
             
             if not commit_success:
@@ -3410,9 +3752,24 @@ def insurance():
                     import traceback
                     sys.stderr.write(f"Insurance application (/insurance): Commit failed for {car_plate}\n")
                     sys.stderr.write(f"Insurance application traceback: {traceback.format_exc()}\n")
+                    # 세션 상태 확인
+                    sys.stderr.write(f"Session new: {len(db.session.new)}, dirty: {len(db.session.dirty)}, deleted: {len(db.session.deleted)}\n")
+                    if db.session.new:
+                        for obj in db.session.new:
+                            sys.stderr.write(f"New object: {type(obj).__name__}, id: {getattr(obj, 'id', 'N/A')}\n")
                 except Exception:
                     pass
-                flash('신청 처리 중 오류가 발생했습니다. 다시 시도해주세요.', 'danger')
+                
+                # 더 구체적인 오류 메시지 제공
+                error_msg = '신청 처리 중 오류가 발생했습니다.'
+                try:
+                    # 마지막 오류 확인 시도
+                    if db.session.is_active:
+                        db.session.rollback()
+                except Exception:
+                    pass
+                
+                flash(f'{error_msg} 입력 정보를 확인하고 다시 시도해주세요. 문제가 계속되면 관리자에게 문의해주세요.', 'danger')
                 return redirect(url_for('insurance'))
             
             # 커밋 성공 후 검증
@@ -3426,7 +3783,7 @@ def insurance():
             except Exception:
                 pass
             
-            # 현대해상 API로 신청 전송
+            # 현대해상 API로 신청 전송 (실패해도 신청은 저장됨)
             try:
                 api_result = submit_insurance_to_hyundai(app_row)
                 # API 응답 필드가 존재하는지 확인 후 설정
@@ -3439,33 +3796,53 @@ def insurance():
                 
                 # 응답 코드에 따라 상태 업데이트
                 response_code = api_result.get('response_code', '')
-                if response_code.startswith('00'):
-                    # 응답 코드가 '00'으로 시작하면 가입시간 설정
-                    if not app_row.start_at:
-                        app_row.start_at = datetime.now(KST)
-                        if not app_row.end_at:
-                            app_row.end_at = app_row.start_at + timedelta(days=30)
-                    # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
-                    if response_code == '0002':
-                        app_row.status = '가입'
+                # 신규 신청 시에는 API 응답코드가 00이어도 자동으로 가입시간을 설정하지 않음
+                # 가입시간은 관리자가 수기로 입력하거나 재호출 시에만 설정됨
+                if api_result.get('success', False) and response_code.startswith('00'):
+                    # API 호출 성공 시 상태는 '신청'으로 유지 (자동 가입 방지)
+                    app_row.status = '신청'
+                    # 가입시간은 자동으로 설정하지 않음 (수기 입력 또는 재호출 시에만 설정)
+                    # 포인트 차감도 하지 않음 (가입시간이 수기로 입력되거나 재호출 시에만 차감)
+                elif not api_result.get('success', False):
+                    # API 호출 실패 시 'API오류' 상태로 설정
+                    app_row.status = 'API오류'
                 elif response_code.startswith('1'):
-                    # 입력 오류 - 상태는 '신청' 유지
-                    pass
+                    # 입력 오류 - 상태는 'API오류'로 설정
+                    app_row.status = 'API오류'
                 elif response_code.startswith('2'):
-                    # 중복/이미 가입 - 상태는 '신청' 유지
-                    pass
-                # 기타 오류는 '신청' 상태 유지
+                    # 중복/이미 가입 - 상태는 'API오류'로 설정
+                    app_row.status = 'API오류'
+                else:
+                    # 기타 오류는 'API오류' 상태로 설정
+                    app_row.status = 'API오류'
                 
                 safe_commit()
                 
-                flash(f'신청이 등록되었습니다. {api_result.get("response_message", "")}', 'success' if api_result.get('success') else 'warning')
+                if api_result.get('success'):
+                    flash(f'신청이 등록되었습니다. {api_result.get("response_message", "")}', 'success')
+                else:
+                    flash(f'신청이 등록되었습니다. (API 호출 실패: {api_result.get("response_message", "")})', 'warning')
             except Exception as e:
+                # API 호출 중 예외 발생 시 'API오류' 상태로 설정
+                try:
+                    if hasattr(app_row, 'api_response_code'):
+                        app_row.api_response_code = 'EXCEPTION'
+                    if hasattr(app_row, 'api_response_message'):
+                        app_row.api_response_message = f'API 호출 중 예외 발생: {str(e)}'
+                    if hasattr(app_row, 'api_requested_at'):
+                        app_row.api_requested_at = datetime.now(KST)
+                    app_row.status = 'API오류'
+                    safe_commit()
+                except Exception:
+                    pass
+                
                 try:
                     import sys
                     import traceback
                     sys.stderr.write(f"Hyundai API call error: {e}\n{traceback.format_exc()}\n")
                 except Exception:
                     pass
+                flash('신청이 등록되었습니다. (API 호출 중 오류가 발생했습니다. 재호출 버튼을 사용해주세요.)', 'warning')
                 flash('신청이 등록되었습니다. (API 호출 중 오류 발생)', 'warning')
             
             return redirect(url_for('insurance'))
@@ -3492,7 +3869,13 @@ def insurance():
     if db is None:
         flash('데이터베이스가 초기화되지 않았습니다.', 'danger')
         return redirect(url_for('dashboard'))
-    q = db.session.query(InsuranceApplication).filter_by(created_by_member_id=current_user.id)
+    
+    # 관리자(admin) 또는 파트너 관리자(partner_admin)는 모든 신청을 볼 수 있음
+    is_admin = hasattr(current_user, 'role') and current_user.role in ['admin', 'partner_admin']
+    if is_admin:
+        q = db.session.query(InsuranceApplication)
+    else:
+        q = db.session.query(InsuranceApplication).filter_by(created_by_member_id=current_user.id)
     if start_date:
         q = q.filter(InsuranceApplication.desired_start_date >= start_date)
     if end_date:
@@ -3599,6 +3982,9 @@ def insurance():
                 VirtualAccount.status == '대기'
             ).order_by(VirtualAccount.created_at.desc()).first()
     
+    # 관리자 권한 확인
+    is_admin = hasattr(current_user, 'role') and current_user.role in ['admin', 'partner_admin']
+    
     return render_template('insurance.html', 
                          rows=rows, 
                          items=items, 
@@ -3608,7 +3994,8 @@ def insurance():
                          member_recent_deposits=member_recent_deposits,
                          member_settlement_method=member_settlement_method,
                          pending_virtual_account=pending_virtual_account,
-                         point_requirement=point_requirement)
+                         point_requirement=point_requirement,
+                         is_admin=is_admin)
 
 
 @app.route('/insurance/template')
@@ -3674,7 +4061,23 @@ def insurance_upload():
             memo = str(row.get('비고', '')).strip() if '비고' in df.columns else None
             if not desired_start_date or not car_plate or not vin or not car_name or not car_registered_at:
                 continue
+            
+            # partner_group_id 확인 (데이터베이스에서 직접 조회)
+            partner_group_id = None
+            try:
+                if hasattr(current_user, 'id') and current_user.id:
+                    # 데이터베이스에서 최신 정보 조회
+                    member = db.session.get(Member, current_user.id)
+                    if member:
+                        partner_group_id = member.partner_group_id
+            except Exception:
+                pass
+            
+            if not partner_group_id:
+                continue  # 파트너그룹이 없으면 건너뛰기
+            
             app_row = InsuranceApplication(
+                partner_group_id=partner_group_id,
                 desired_start_date=desired_start_date,
                 insured_code=current_user.business_number or '',
                 contractor_code='부산자동차매매사업자조합',
@@ -3709,21 +4112,38 @@ def insurance_upload():
                     
                     # 응답 코드에 따라 상태 업데이트
                     response_code = api_result.get('response_code', '')
-                    if response_code.startswith('00'):
-                        # 응답 코드가 '00'으로 시작하면 가입시간 설정
-                        if not app_row.start_at:
-                            app_row.start_at = datetime.now(KST)
-                            if not app_row.end_at:
-                                app_row.end_at = app_row.start_at + timedelta(days=30)
-                        # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
-                        if response_code == '0002':
-                            app_row.status = '가입'
+                    # 엑셀 업로드 시에도 신규 신청과 동일하게 자동 가입 방지
+                    if api_result.get('success', False) and response_code.startswith('00'):
+                        # API 호출 성공 시 상태는 '신청'으로 유지 (자동 가입 방지)
+                        app_row.status = '신청'
+                        # 가입시간은 자동으로 설정하지 않음 (수기 입력 또는 재호출 시에만 설정)
+                        # 포인트 차감도 하지 않음 (가입시간이 수기로 입력되거나 재호출 시에만 차감)
+                    elif not api_result.get('success', False):
+                        # API 호출 실패 시 'API오류' 상태로 설정
+                        app_row.status = 'API오류'
+                    else:
+                        app_row.status = '신청'
+                    
+                    safe_commit()
                     
                     if api_result.get('success'):
                         api_success_count += 1
                     else:
                         api_error_count += 1
                 except Exception as e:
+                    # API 호출 중 예외 발생 시 'API오류' 상태로 설정
+                    try:
+                        if hasattr(app_row, 'api_response_code'):
+                            app_row.api_response_code = 'EXCEPTION'
+                        if hasattr(app_row, 'api_response_message'):
+                            app_row.api_response_message = f'API 호출 중 예외 발생: {str(e)}'
+                        if hasattr(app_row, 'api_requested_at'):
+                            app_row.api_requested_at = datetime.now(KST)
+                        app_row.status = 'API오류'
+                        safe_commit()
+                    except Exception:
+                        pass
+                    
                     try:
                         import sys
                         sys.stderr.write(f"Hyundai API call error for upload: {e}\n")
@@ -4221,9 +4641,13 @@ def admin_insurance_overview():
                 
                 # 가입시간 처리
                 start_at_str = request.form.get('start_at', '').strip()
+                start_at_was_none = app.start_at is None
                 if start_at_str:
                     try:
                         app.start_at = datetime.strptime(start_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                        # 가입시간이 수기로 입력될 때 포인트 차감
+                        if start_at_was_none:
+                            deduct_points_for_insurance(app)
                     except ValueError:
                         pass
                 
@@ -4766,10 +5190,112 @@ def admin_administrators():
 # 파트너그룹 섹션 라우트들
 
 # 파트너그룹 보험가입 페이지 (요구사항의 책임보험가입페이지)
+@app.route('/partner/insurance/retry-api/<int:application_id>', methods=['POST'])
+def partner_retry_insurance_api(application_id):
+    """파트너 보험 신청 API 재호출"""
+    try:
+        ensure_initialized()
+        
+        # 파트너그룹 확인
+        partner_group_id = None
+        if hasattr(current_user, 'partner_group_id') and current_user.partner_group_id:
+            partner_group_id = current_user.partner_group_id
+        elif 'partner_group_id' in session:
+            partner_group_id = session.get('partner_group_id')
+        
+        if not partner_group_id:
+            flash('파트너그룹 정보를 찾을 수 없습니다.', 'danger')
+            return redirect(url_for('partner_insurance'))
+        
+        application = db.session.get(InsuranceApplication, application_id)
+        if not application:
+            flash('신청 정보를 찾을 수 없습니다.', 'danger')
+            return redirect(url_for('partner_insurance'))
+        
+        # 권한 확인: 같은 파트너그룹이어야 함
+        if application.partner_group_id != partner_group_id:
+            flash('권한이 없습니다.', 'warning')
+            return redirect(url_for('partner_insurance'))
+        
+        # 회원사는 본인 신청만 수정 가능
+        is_partner_admin = False
+        if hasattr(current_user, 'role'):
+            is_partner_admin = current_user.role == 'partner_admin'
+        
+        if not is_partner_admin:
+            if not hasattr(current_user, 'id') or application.created_by_member_id != current_user.id:
+                flash('권한이 없습니다.', 'warning')
+                return redirect(url_for('partner_insurance'))
+        
+        # API 재호출
+        api_result = submit_insurance_to_hyundai(application)
+        
+        # API 응답 필드 업데이트
+        if hasattr(application, 'api_response_code'):
+            application.api_response_code = api_result.get('response_code', '')
+        if hasattr(application, 'api_response_message'):
+            application.api_response_message = api_result.get('response_message', '')
+        if hasattr(application, 'api_requested_at'):
+            application.api_requested_at = datetime.now(KST)
+        
+        # 응답 코드에 따라 상태 업데이트
+        response_code = api_result.get('response_code', '')
+        if api_result.get('success', False) and response_code.startswith('00'):
+            # API 호출 성공하고 응답 코드가 '00'으로 시작하면 가입시간 설정 (desired_start_date부터 시작)
+            if not application.start_at:
+                # desired_start_date를 datetime으로 변환 (시간은 00:00:00)
+                if application.desired_start_date:
+                    application.start_at = datetime.combine(application.desired_start_date, datetime.min.time(), tzinfo=KST)
+                else:
+                    application.start_at = datetime.now(KST)
+                if not application.end_at:
+                    application.end_at = application.start_at + timedelta(days=30)
+            # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
+            if response_code == '0002':
+                application.status = '가입'
+            else:
+                application.status = '신청'
+            
+            # API 응답 코드가 '00'일 때 포인트 차감
+            deduct_points_for_insurance(application)
+        elif not api_result.get('success', False):
+            # API 호출 실패 시 'API오류' 상태로 설정
+            application.status = 'API오류'
+        elif response_code.startswith('1'):
+            # 입력 오류 - 'API오류' 상태로 설정
+            application.status = 'API오류'
+        elif response_code.startswith('2'):
+            # 중복/이미 가입 - 'API오류' 상태로 설정
+            application.status = 'API오류'
+        else:
+            # 기타 오류는 'API오류' 상태로 설정
+            application.status = 'API오류'
+        
+        safe_commit()
+        
+        if api_result.get('success'):
+            flash(f'API 재호출이 완료되었습니다. {api_result.get("response_message", "")}', 'success')
+        else:
+            flash(f'API 재호출이 실패했습니다. {api_result.get("response_message", "")}', 'warning')
+    except Exception as e:
+        try:
+            import sys
+            import traceback
+            sys.stderr.write(f"Partner retry API error: {e}\n{traceback.format_exc()}\n")
+        except Exception:
+            pass
+        flash('API 재호출 중 오류가 발생했습니다.', 'danger')
+    
+    return redirect(url_for('partner_insurance'))
+
+
 @app.route('/partner/insurance', methods=['GET', 'POST'])
 def partner_insurance():
     try:
         ensure_initialized()
+        
+        # Flask-Login current_user 항상 import (함수 내에서 사용하기 위해)
+        from flask_login import current_user
         
         # 권한 확인
         partner_group_id = None
@@ -4782,7 +5308,6 @@ def partner_insurance():
         else:
             # Flask-Login 기반 회원사 확인
             try:
-                from flask_login import current_user
                 is_auth = getattr(current_user, 'is_authenticated', False)
             except Exception:
                 is_auth = False
@@ -4832,6 +5357,10 @@ def partner_insurance():
                         VirtualAccount.status == '대기'
                     ).order_by(VirtualAccount.created_at.desc()).first()
 
+        # GET 요청에서 사용할 날짜 파라미터 미리 가져오기
+        start_date = parse_date(request.args.get('start_date', ''))
+        end_date = parse_date(request.args.get('end_date', ''))
+        
         if request.method == 'POST':
             action = request.form.get('action')
             
@@ -4873,6 +5402,43 @@ def partner_insurance():
                         creation_allowed = False
                 
                 if creation_allowed:
+                    # 중복 가입 체크: 같은 차량번호나 차대번호로 이미 가입되어 있고 종료시간이 남아있는지 확인
+                    try:
+                        now = datetime.now(KST)
+                        existing_applications = db.session.query(InsuranceApplication).filter(
+                            InsuranceApplication.partner_group_id == partner_group_id,
+                            db.or_(
+                                InsuranceApplication.car_plate == car_plate,
+                                InsuranceApplication.vin == vin
+                            ),
+                            InsuranceApplication.status.in_(['신청', '가입']),
+                            db.or_(
+                                InsuranceApplication.end_at.is_(None),
+                                InsuranceApplication.end_at > now
+                            )
+                        ).all()
+                        
+                        if existing_applications:
+                            # 가장 최근 종료시간 찾기
+                            latest_end_at = None
+                            for app in existing_applications:
+                                if app.end_at and (latest_end_at is None or app.end_at > latest_end_at):
+                                    latest_end_at = app.end_at
+                            
+                            if latest_end_at:
+                                end_date_str = latest_end_at.strftime('%Y-%m-%d %H:%M:%S')
+                                flash(f'({end_date_str}) 보험이 가입되어 있습니다.', 'warning')
+                            else:
+                                flash('보험이 가입되어 있습니다.', 'warning')
+                            return redirect(url_for('partner_insurance'))
+                    except Exception as e:
+                        try:
+                            import sys
+                            sys.stderr.write(f"Error checking duplicate insurance (partner): {e}\n")
+                        except Exception:
+                            pass
+                        # 중복 체크 실패 시에도 진행 (안전을 위해)
+                    
                     try:
                         # 파트너그룹 정보 가져오기
                         partner_group = db.session.query(PartnerGroup).filter_by(id=partner_group_id).first()
@@ -4890,6 +5456,26 @@ def partner_insurance():
                         # 계약자코드: 파트너그룹 이름
                         contractor_code = partner_group_name
                         
+                        # partner_group_id 유효성 검증
+                        if not partner_group_id:
+                            flash('파트너그룹 정보를 찾을 수 없습니다. 관리자에게 문의해주세요.', 'danger')
+                            return redirect(url_for('partner_insurance'))
+                        
+                        # 파트너그룹이 실제로 존재하는지 확인
+                        try:
+                            partner_group_check = db.session.get(PartnerGroup, partner_group_id)
+                            if not partner_group_check:
+                                flash('파트너그룹이 존재하지 않습니다. 관리자에게 문의해주세요.', 'danger')
+                                return redirect(url_for('partner_insurance'))
+                        except Exception as e:
+                            try:
+                                import sys
+                                sys.stderr.write(f"Error checking partner group: {e}\n")
+                            except Exception:
+                                pass
+                            flash('파트너그룹 확인 중 오류가 발생했습니다.', 'danger')
+                            return redirect(url_for('partner_insurance'))
+                        
                         application = InsuranceApplication(
                             partner_group_id=partner_group_id,
                             desired_start_date=desired_start_date,
@@ -4904,12 +5490,33 @@ def partner_insurance():
                             memo=memo,
                             created_by_member_id=current_user.id if not is_partner_admin and hasattr(current_user, 'id') else None,
                         )
+                        
+                        # 커밋 전 데이터 검증
+                        try:
+                            if not application.partner_group_id:
+                                flash('파트너그룹 정보가 없습니다. 관리자에게 문의해주세요.', 'danger')
+                                db.session.rollback()
+                                return redirect(url_for('partner_insurance'))
+                            if not application.desired_start_date:
+                                flash('가입희망일자를 입력해주세요.', 'danger')
+                                db.session.rollback()
+                                return redirect(url_for('partner_insurance'))
+                        except Exception as validation_err:
+                            try:
+                                import sys
+                                sys.stderr.write(f"Validation error: {validation_err}\n")
+                            except Exception:
+                                pass
+                            db.session.rollback()
+                            flash('입력 정보를 확인해주세요.', 'danger')
+                            return redirect(url_for('partner_insurance'))
+                        
                         db.session.add(application)
                         
                         # 커밋 전 디버깅
                         try:
                             import sys
-                            sys.stderr.write(f"Insurance application: Adding {car_plate} to session\n")
+                            sys.stderr.write(f"Insurance application: Adding {car_plate} to session, partner_group_id={partner_group_id}\n")
                         except Exception:
                             pass
                         
@@ -4949,20 +5556,39 @@ def partner_insurance():
                                 
                                 # 응답 코드에 따라 상태 업데이트
                                 response_code = api_result.get('response_code', '')
-                                if response_code.startswith('00'):
-                                    # 응답 코드가 '00'으로 시작하면 가입시간 설정
-                                    if not application.start_at:
-                                        application.start_at = datetime.now(KST)
-                                        if not application.end_at:
-                                            application.end_at = application.start_at + timedelta(days=30)
-                                    # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
-                                    if response_code == '0002':
-                                        application.status = '가입'
+                                # 신규 신청 시에는 API 응답코드가 00이어도 자동으로 가입시간을 설정하지 않음
+                                # 가입시간은 관리자가 수기로 입력하거나 재호출 시에만 설정됨
+                                if api_result.get('success', False) and response_code.startswith('00'):
+                                    # API 호출 성공 시 상태는 '신청'으로 유지 (자동 가입 방지)
+                                    application.status = '신청'
+                                    # 가입시간은 자동으로 설정하지 않음 (수기 입력 또는 재호출 시에만 설정)
+                                    # 포인트 차감도 하지 않음 (가입시간이 수기로 입력되거나 재호출 시에만 차감)
+                                elif not api_result.get('success', False):
+                                    # API 호출 실패 시 'API오류' 상태로 설정
+                                    application.status = 'API오류'
+                                else:
+                                    application.status = '신청'
                                 
                                 safe_commit()
                                 
-                                flash(f'보험 신청이 등록되었습니다. {api_result.get("response_message", "")}', 'success' if api_result.get('success') else 'warning')
+                                if api_result.get('success'):
+                                    flash(f'보험 신청이 등록되었습니다. {api_result.get("response_message", "")}', 'success')
+                                else:
+                                    flash(f'보험 신청이 등록되었습니다. (API 호출 실패: {api_result.get("response_message", "")})', 'warning')
                             except Exception as e:
+                                # API 호출 중 예외 발생 시 'API오류' 상태로 설정
+                                try:
+                                    if hasattr(application, 'api_response_code'):
+                                        application.api_response_code = 'EXCEPTION'
+                                    if hasattr(application, 'api_response_message'):
+                                        application.api_response_message = f'API 호출 중 예외 발생: {str(e)}'
+                                    if hasattr(application, 'api_requested_at'):
+                                        application.api_requested_at = datetime.now(KST)
+                                    application.status = 'API오류'
+                                    safe_commit()
+                                except Exception:
+                                    pass
+                                
                                 try:
                                     import sys
                                     import traceback
@@ -5090,13 +5716,32 @@ def partner_insurance():
                 if app_id:
                     application = db.session.get(InsuranceApplication, int(app_id))
                     if application and application.partner_group_id == partner_group_id:
-                        # 권한 확인: 본인이 신청한 것이거나 파트너그룹 관리자
-                        if not is_partner_admin:
-                            if not hasattr(current_user, 'id') or application.created_by_member_id != current_user.id:
-                                flash('권한이 없습니다.', 'warning')
-                                return redirect(url_for('partner_insurance'))
-                        if application.start_at:
+                        # 권한 확인: 본인이 신청한 것이거나 파트너그룹 관리자 또는 전체 관리자
+                        is_admin = False
+                        try:
+                            is_admin = hasattr(current_user, 'role') and current_user.role == 'admin'
+                        except Exception:
+                            pass
+                        can_modify = is_partner_admin or is_admin
+                        if not can_modify:
+                            try:
+                                can_modify = hasattr(current_user, 'id') and application.created_by_member_id == current_user.id
+                            except Exception:
+                                pass
+                        if not can_modify:
+                            flash('권한이 없습니다.', 'warning')
+                            return redirect(url_for('partner_insurance'))
+                        # 관리자는 가입 후에도 수정/삭제 가능
+                        if not is_admin:
+                            try:
+                                is_admin = hasattr(current_user, 'role') and current_user.role == 'admin'
+                            except Exception:
+                                is_admin = False
+                        if application.start_at and not is_admin and not is_partner_admin:
                             flash('가입이 시작된 신청은 수정/삭제할 수 없습니다.', 'warning')
+                            return redirect(url_for('partner_insurance', 
+                                                   start_date=start_date.strftime('%Y-%m-%d') if start_date else '',
+                                                   end_date=end_date.strftime('%Y-%m-%d') if end_date else ''))
                         else:
                             if action == 'delete':
                                 try:
@@ -5140,6 +5785,9 @@ def partner_insurance():
                                     except Exception:
                                         pass
                                     flash('삭제 처리 중 오류가 발생했습니다.', 'danger')
+                                return redirect(url_for('partner_insurance', 
+                                                       start_date=start_date.strftime('%Y-%m-%d') if start_date else '',
+                                                       end_date=end_date.strftime('%Y-%m-%d') if end_date else ''))
                             elif action == 'save':
                                 try:
                                     app_id = application.id
@@ -5149,6 +5797,40 @@ def partner_insurance():
                                     application.car_name = request.form.get('car_name', '').strip()
                                     application.car_registered_at = parse_date(request.form.get('car_registered_at'))
                                     application.memo = request.form.get('memo', '').strip()
+                                    
+                                    # 관리자는 가입시간과 종료시간도 수정 가능
+                                    if is_admin or is_partner_admin:
+                                        start_at_str = request.form.get('start_at', '').strip()
+                                        if start_at_str:
+                                            try:
+                                                start_at_was_none = application.start_at is None
+                                                # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
+                                                application.start_at = datetime.strptime(start_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                                                # 가입시간이 수기로 입력될 때 포인트 차감
+                                                if start_at_was_none:
+                                                    deduct_points_for_insurance(application)
+                                            except (ValueError, TypeError) as e:
+                                                try:
+                                                    import sys
+                                                    sys.stderr.write(f"Error parsing start_at: {e}\n")
+                                                except Exception:
+                                                    pass
+                                                # 파싱 실패 시 기존 값 유지
+                                                pass
+                                        
+                                        end_at_str = request.form.get('end_at', '').strip()
+                                        if end_at_str:
+                                            try:
+                                                # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
+                                                application.end_at = datetime.strptime(end_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                                            except (ValueError, TypeError) as e:
+                                                try:
+                                                    import sys
+                                                    sys.stderr.write(f"Error parsing end_at: {e}\n")
+                                                except Exception:
+                                                    pass
+                                                # 파싱 실패 시 기존 값 유지
+                                                pass
                                     
                                     try:
                                         import sys
@@ -5192,12 +5874,15 @@ def partner_insurance():
                                     except Exception:
                                         pass
                                     flash('저장 처리 중 오류가 발생했습니다.', 'danger')
+                                return redirect(url_for('partner_insurance', 
+                                                       start_date=start_date.strftime('%Y-%m-%d') if start_date else '',
+                                                       end_date=end_date.strftime('%Y-%m-%d') if end_date else ''))
             
-            return redirect(url_for('partner_insurance'))
+            return redirect(url_for('partner_insurance', 
+                                   start_date=start_date.strftime('%Y-%m-%d') if start_date else '',
+                                   end_date=end_date.strftime('%Y-%m-%d') if end_date else ''))
         
         # GET 요청: 보험신청 목록 조회
-        start_date = parse_date(request.args.get('start_date', ''))
-        end_date = parse_date(request.args.get('end_date', ''))
         edit_id = request.args.get('edit_id')
         
         # 파트너그룹 정보 가져오기
@@ -5218,6 +5903,38 @@ def partner_insurance():
         applications = []
         try:
             if db is not None:
+                # API 응답 필드가 있는지 확인하고 없으면 추가
+                try:
+                    from sqlalchemy import text
+                    res = db.session.execute(text("PRAGMA table_info(insurance_application)"))
+                    cols = [r[1] for r in res.fetchall()]
+                    
+                    # API 필드가 없으면 추가
+                    if 'api_response_code' not in cols:
+                        try:
+                            db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_code VARCHAR(32)"))
+                            safe_commit()
+                        except Exception:
+                            pass
+                    if 'api_response_message' not in cols:
+                        try:
+                            db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_message VARCHAR(512)"))
+                            safe_commit()
+                        except Exception:
+                            pass
+                    if 'api_requested_at' not in cols:
+                        try:
+                            db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_requested_at DATETIME"))
+                            safe_commit()
+                        except Exception:
+                            pass
+                except Exception as migration_err:
+                    try:
+                        import sys
+                        sys.stderr.write(f"Warning: Error checking/adding API fields: {migration_err}\n")
+                    except Exception:
+                        pass
+                
                 q = db.session.query(InsuranceApplication).filter_by(partner_group_id=partner_group_id)
                 
                 # 회원사는 본인 신청만 조회
@@ -5247,12 +5964,30 @@ def partner_insurance():
                 try:
                     applications = q.order_by(InsuranceApplication.created_at.desc()).all()
                 except Exception as e:
+                    error_str = str(e)
                     try:
                         import sys
                         sys.stderr.write(f"Warning: Error querying insurance applications: {e}\n")
+                        # API 필드 오류인 경우 마이그레이션 재시도
+                        if 'api_response_code' in error_str or 'api_response_message' in error_str or 'api_requested_at' in error_str:
+                            sys.stderr.write("Attempting to add missing API fields...\n")
+                            try:
+                                from sqlalchemy import text
+                                if 'api_response_code' in error_str:
+                                    db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_code VARCHAR(32)"))
+                                if 'api_response_message' in error_str:
+                                    db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_response_message VARCHAR(512)"))
+                                if 'api_requested_at' in error_str:
+                                    db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN api_requested_at DATETIME"))
+                                safe_commit()
+                                # 재시도
+                                applications = q.order_by(InsuranceApplication.created_at.desc()).all()
+                                sys.stderr.write("Successfully added API fields and retried query\n")
+                            except Exception as retry_err:
+                                sys.stderr.write(f"Failed to add API fields: {retry_err}\n")
+                                applications = []
                     except Exception:
-                        pass
-                    applications = []
+                        applications = []
                 
                 # 상태 재계산
                 for app in applications:
@@ -7430,6 +8165,7 @@ def admin_insurance():
                 row.vin = request.form.get('vin', '').strip()
                 row.car_name = request.form.get('car_name', '').strip()
                 row.car_registered_at = parse_date(request.form.get('car_registered_at'))
+                start_at_was_none = row.start_at is None
                 row.start_at = parse_datetime(request.form.get('start_at')) # 가입시간 수정 추가
                 row.end_at = parse_datetime(request.form.get('end_at'))   # 종료시간 수정 추가
                 row.memo = request.form.get('memo', '').strip()
@@ -7438,6 +8174,11 @@ def admin_insurance():
                     row.insurance_policy_path = request.form.get('insurance_policy_path', '').strip() or None
                 if hasattr(row, 'insurance_policy_url'):
                     row.insurance_policy_url = request.form.get('insurance_policy_url', '').strip() or None
+                
+                # 가입시간이 수기로 입력될 때 포인트 차감
+                if start_at_was_none and row.start_at:
+                    deduct_points_for_insurance(row)
+                
                 if not safe_commit():
                     flash('저장 처리 중 오류가 발생했습니다.', 'danger')
                 else:

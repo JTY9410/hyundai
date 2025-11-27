@@ -91,7 +91,7 @@
 | `car_name` | VARCHAR(128) | 차량명 |
 | `car_registered_at` | DATE | 차량등록일자 |
 | `premium` | INTEGER | 보험료 (기본 9,500원) |
-| `status` | VARCHAR(32) | 신청 / 가입 / 종료 |
+| `status` | VARCHAR(32) | 신청 / 가입 / 종료 / API오류 |
 | `memo` | VARCHAR(255) | 비고 |
 | `insurance_policy_path` | VARCHAR(512) | 증권 파일 경로 |
 | `insurance_policy_url` | VARCHAR(512) | 증권 URL |

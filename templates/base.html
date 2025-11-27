@@ -671,19 +671,25 @@
       {% if messages %}
         <div class="container mx-auto px-4 pt-6 max-w-7xl">
           {% for category, message in messages %}
-            <div class="group p-4 rounded-2xl mb-3 shadow-xl border-l-4 animate-slide-in backdrop-blur-sm {% if category == 'success' %}bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-800 border-emerald-500 shadow-emerald-200/50{% elif category == 'danger' %}bg-gradient-to-r from-red-50 to-rose-50 text-red-800 border-red-500 shadow-red-200/50{% elif category == 'warning' %}bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-800 border-amber-500 shadow-amber-200/50{% else %}bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-800 border-blue-500 shadow-blue-200/50{% endif %} hover:shadow-2xl transition-all duration-300 card-hover">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center">
-                  <div class="{% if category == 'success' %}bg-emerald-500{% elif category == 'danger' %}bg-red-500{% elif category == 'warning' %}bg-amber-500{% else %}bg-blue-500{% endif %} rounded-full p-2 mr-3 shadow-lg">
-                    <i class="bi {% if category == 'success' %}bi-check-circle-fill{% elif category == 'danger' %}bi-exclamation-circle-fill{% elif category == 'warning' %}bi-exclamation-triangle-fill{% else %}bi-info-circle-fill{% endif %} text-white text-lg"></i>
+            {% if '보험이 가입되어 있습니다' in message %}
+              <script>
+                alert('{{ message }}');
+              </script>
+            {% else %}
+              <div class="group p-4 rounded-2xl mb-3 shadow-xl border-l-4 animate-slide-in backdrop-blur-sm {% if category == 'success' %}bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-800 border-emerald-500 shadow-emerald-200/50{% elif category == 'danger' %}bg-gradient-to-r from-red-50 to-rose-50 text-red-800 border-red-500 shadow-red-200/50{% elif category == 'warning' %}bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-800 border-amber-500 shadow-amber-200/50{% else %}bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-800 border-blue-500 shadow-blue-200/50{% endif %} hover:shadow-2xl transition-all duration-300 card-hover">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center">
+                    <div class="{% if category == 'success' %}bg-emerald-500{% elif category == 'danger' %}bg-red-500{% elif category == 'warning' %}bg-amber-500{% else %}bg-blue-500{% endif %} rounded-full p-2 mr-3 shadow-lg">
+                      <i class="bi {% if category == 'success' %}bi-check-circle-fill{% elif category == 'danger' %}bi-exclamation-circle-fill{% elif category == 'warning' %}bi-exclamation-triangle-fill{% else %}bi-info-circle-fill{% endif %} text-white text-lg"></i>
+                    </div>
+                    <span class="font-semibold">{{ message }}</span>
                   </div>
-                  <span class="font-semibold">{{ message }}</span>
+                  <button onclick="this.parentElement.parentElement.remove()" class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-gray-400 hover:text-gray-600 ml-4">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
                 </div>
-                <button onclick="this.parentElement.parentElement.remove()" class="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-gray-400 hover:text-gray-600 ml-4">
-                  <i class="bi bi-x-lg"></i>
-                </button>
               </div>
-            </div>
+            {% endif %}
           {% endfor %}
         </div>
       {% endif %}
