@@ -84,6 +84,21 @@
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">회원유형 *</label>
+              <div class="flex items-center space-x-4">
+                <label class="inline-flex items-center space-x-1">
+                  <input type="radio" name="member_type" value="법인" checked
+                         class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
+                  <span class="text-sm text-gray-700">법인</span>
+                </label>
+                <label class="inline-flex items-center space-x-1">
+                  <input type="radio" name="member_type" value="개인"
+                         class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
+                  <span class="text-sm text-gray-700">개인</span>
+                </label>
+              </div>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">주소</label>
               <input type="text" name="address"
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
@@ -94,8 +109,10 @@
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">법인번호</label>
-              <input type="text" name="corporation_number"
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                법인번호/주민등록번호 <span class="text-red-500" id="corp-required-indicator" style="display:none">*</span>
+              </label>
+              <input type="text" name="corporation_number" id="modal_corporation_number"
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
             <div>
@@ -159,12 +176,13 @@
           <thead class="bg-gray-50/80">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[50px]">순</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[90px]">회원유형</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">상사명</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">아이디</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">패스워드</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[200px]">주소</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">사업자번호</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">법인번호</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">법인번호/주민등록번호</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">대표자</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[110px]">연락처</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[110px]">휴대폰</th>
@@ -180,7 +198,7 @@
           <tbody class="bg-white/50 divide-y divide-gray-200">
             {% for member in members %}
             <tr class="hover:bg-blue-50/50 transition-colors duration-200" id="row-{{ member.id }}">
-              {% if edit_id == member.id|string %}
+              {% if edit_id == member.id|string and not is_delegated_group %}
               <!-- Edit Mode -->
               <form method="post" id="edit-form-{{ member.id }}" enctype="multipart/form-data" onsubmit="disableRow(this)">
                 <input type="hidden" name="action" value="save">
@@ -286,12 +304,16 @@
               {% else %}
               <!-- View Mode -->
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ loop.index }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.member_type or '법인' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ member.company_name }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.username }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">••••••••</td>
               <td class="px-4 py-3 text-sm text-gray-900 break-words">{{ member.address or '-' }}</td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.business_number or '-' }}</td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.corporation_number or '-' }}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.business_number or '-' }}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+              {{ member.member_type or '법인' }}
+            </td>
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.corporation_number or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.representative or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.phone or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.mobile or '-' }}</td>
@@ -331,6 +353,7 @@
               </td>
               <td class="px-4 py-3 text-sm text-gray-900 break-words">{{ member.memo or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm">
+                {% if not is_delegated_group %}
                 <div class="flex items-center space-x-1">
                   <a href="{{ url_for('partner_admin_member_approval', edit_id=member.id) }}"
                      class="inline-flex items-center px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
@@ -347,12 +370,15 @@
                     </button>
                   </form>
                 </div>
+                {% else %}
+                <span class="text-xs text-gray-400">관리자페이지에서만 수정/삭제 가능</span>
+                {% endif %}
               </td>
               {% endif %}
             </tr>
             {% else %}
             <tr>
-              <td colspan="16" class="px-4 py-8 text-center text-gray-500">
+              <td colspan="17" class="px-4 py-8 text-center text-gray-500">
                 <i class="bi bi-inbox text-4xl mb-2 block"></i>
                 회원가입 신청 내역이 없습니다.
               </td>
@@ -378,6 +404,35 @@ function disableRow(form) {
     console.error('disableRow error', err);
   }
 }
+
+// 회원추가 모달에서 회원유형에 따라 법인번호/주민등록번호 필수 여부 제어
+document.addEventListener('DOMContentLoaded', function () {
+  const memberTypeRadios = document.querySelectorAll('input[name="member_type"]');
+  const corpInput = document.getElementById('modal_corporation_number');
+  const requiredIndicator = document.getElementById('corp-required-indicator');
+
+  function updateCorpField() {
+    if (!corpInput || !requiredIndicator) return;
+    const selected = document.querySelector('input[name="member_type"]:checked');
+    if (!selected) return;
+
+    if (selected.value === '개인') {
+      corpInput.placeholder = '주민등록번호를 입력하세요';
+      corpInput.required = true;
+      requiredIndicator.style.display = 'inline';
+    } else {
+      corpInput.placeholder = '';
+      corpInput.required = false;
+      requiredIndicator.style.display = 'none';
+    }
+  }
+
+  memberTypeRadios.forEach(r => {
+    r.addEventListener('change', updateCorpField);
+  });
+
+  updateCorpField();
+});
 </script>
 {% endblock %}
 

@@ -25,11 +25,11 @@
             <label class="block text-sm font-semibold text-gray-700 mb-2">
               <i class="bi bi-building mr-2 text-blue-500"></i>파트너그룹 선택 <span class="text-red-500">*</span>
             </label>
-            <select name="partner_group_id" required
+            <select name="partner_group_id" id="partner-group-select-register" required onchange="togglePremiumSetting()"
                     class="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 bg-white/80 backdrop-blur-sm hover:border-gray-300">
               <option value="">가입할 파트너그룹을 선택하세요</option>
               {% for group in partner_groups %}
-              <option value="{{ group.id }}">{{ group.name }}</option>
+              <option value="{{ group.id }}" data-group-name="{{ group.name }}">{{ group.name }}</option>
               {% endfor %}
             </select>
           </div>
@@ -51,8 +51,8 @@
             </div>
           </div>
 
-          <!-- 개인정보이용동의 (개인 선택 시에만 표시) -->
-          <div id="privacy-agreement-section" class="md:col-span-2 hidden">
+          <!-- 개인정보이용동의 (법인/개인 모두 필수) -->
+          <div id="privacy-agreement-section" class="md:col-span-2">
             <div class="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
               <label class="flex items-start cursor-pointer">
                 <input type="checkbox" name="privacy_agreement" id="privacy_agreement" required
@@ -63,10 +63,10 @@
                   </span>
                   <button type="button" onclick="showPrivacyModal()" 
                           class="ml-2 text-sm text-blue-600 hover:text-blue-800 underline">
-                    전문보기
+                    전문보기 및 동의 선택
                   </button>
                   <p class="text-xs text-gray-600 mt-1">
-                    개인 회원가입을 위해 개인정보 수집 및 이용에 동의가 필요합니다.
+                    전문을 확인한 후 모달에서 동의 여부를 선택하면, 여기 체크박스가 자동으로 설정됩니다.
                   </p>
                 </div>
               </label>
@@ -122,21 +122,21 @@
                    required>
           </div>
 
-          <!-- 법인번호 -->
+          <!-- 법인번호/주민등록번호 -->
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">
-              <i class="bi bi-file-earmark-text mr-2 text-blue-500"></i>법인번호
+            <label class="block text-sm font-semibold text-gray-700 mb-2" id="corporation-label">
+              <i class="bi bi-file-earmark-text mr-2 text-blue-500"></i><span id="corporation-label-text">법인번호</span>
             </label>
-            <input type="text" name="corporation_number" 
+            <input type="text" name="corporation_number" id="corporation_number"
                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white">
           </div>
 
           <!-- 대표자 -->
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-2">
-              <i class="bi bi-person-badge mr-2 text-blue-500"></i>대표자
+              <i class="bi bi-person-badge mr-2 text-blue-500"></i>대표자 <span class="text-red-500">*</span>
             </label>
-            <input type="text" name="representative" 
+            <input type="text" name="representative" required
                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white">
           </div>
 
@@ -152,9 +152,9 @@
           <!-- 휴대폰 -->
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-2">
-              <i class="bi bi-phone mr-2 text-blue-500"></i>휴대폰
+              <i class="bi bi-phone mr-2 text-blue-500"></i>휴대폰 <span class="text-red-500">*</span>
             </label>
-            <input type="text" name="mobile" 
+            <input type="text" name="mobile" required
                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white">
           </div>
 
@@ -167,10 +167,21 @@
                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white">
           </div>
 
+          <!-- 보험료 설정 (위탁운영파트너 그룹만) -->
+          <div class="md:col-span-2" id="premium-setting-section" style="display: none;">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="bi bi-cash-coin mr-2 text-orange-500"></i>보험료 설정 (원)
+            </label>
+            <input type="number" name="claim_amount" min="0" step="1000" value="9500"
+                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                   placeholder="예: 9500">
+            <p class="mt-1 text-xs text-gray-500">정산 시 설정된 보험료 × 건수로 청구됩니다</p>
+          </div>
+
           <!-- 사업자등록증 첨부 -->
           <div class="md:col-span-2">
             <label class="block text-sm font-semibold text-gray-700 mb-2">
-              <i class="bi bi-paperclip mr-2 text-blue-500"></i>사업자등록증 첨부 (선택)
+              <i class="bi bi-paperclip mr-2 text-blue-500"></i>사업자등록증 첨부 <span class="text-red-500">*</span>
             </label>
             <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-blue-400 transition-colors duration-200" id="file-upload-area">
               <div class="space-y-1 text-center">
@@ -178,7 +189,7 @@
                 <div class="flex text-sm text-gray-600">
                   <label for="file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
                     <span>파일 선택</span>
-                    <input id="file-upload" name="registration_cert" type="file" class="sr-only" accept=".pdf,.jpg,.jpeg,.png">
+                    <input id="file-upload" name="registration_cert" type="file" class="sr-only" accept=".pdf,.jpg,.jpeg,.png" required>
                   </label>
                   <p class="pl-1">또는 드래그하여 놓기</p>
                 </div>
@@ -216,177 +227,194 @@
     <div class="p-6 text-gray-800">
       <div class="space-y-6">
         <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-l-4 border-blue-500">
-          <h3 class="text-xl font-bold text-gray-900 mb-2">현대해상화재보험주식회사</h3>
-          <p class="text-base font-semibold text-gray-800 mb-1">[필수] 고객정보 관리 및 가입설계를 위한 개인(신용)정보 처리 상세 동의서</p>
-          <p class="text-sm text-gray-700">
-            정보보호파트 승인 제 90000128 호 (2023.12.01)
+          <h3 class="text-xl font-bold text-gray-900 mb-2">현대해상 중고차매매업자 1개월 책임보험 가입을 위한 개인정보 수집·이용·제공 동의서</h3>
+          <p class="text-sm text-gray-700 mt-2">
+            본 동의서는 「개인정보보호법」, 「보험업법」, 「신용정보의 이용 및 보호에 관한 법률」 등 관련 법령에 따른 필수 동의 사항입니다.
           </p>
         </div>
 
-        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
-          <p class="text-sm text-gray-800 leading-relaxed">
-            <strong>안내사항:</strong> 귀하는 개인(신용)정보의 수집·이용 및 조회, 제공에 관한 동의를 거부하실 수 있으며, 개인의 신용도 등을 평가하기 위한 목적 이외의 개인(신용)정보 제공 동의를 철회할 수 있습니다. 다만, 본 동의는 '고객정보 관리 및 가입설계'를 위해 필수적인 사항이므로 동의를 거부하시는 경우 관련 업무수행이 불가능합니다.
-          </p>
-        </div>
-
-        <!-- 1. 수집·이용에 관한 사항 -->
+        <!-- 1. 개인정보 수집·이용 동의 (필수) -->
         <div class="border-b border-gray-200 pb-4">
-          <h4 class="text-base font-bold text-gray-900 mb-3">1. 수집·이용에 관한 사항</h4>
+          <h4 class="text-lg font-bold text-gray-900 mb-3">■ 1. 개인정보 수집·이용 동의 (필수)</h4>
           
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">수집·이용 목적</p>
+            <p class="text-sm font-semibold text-gray-800 mb-2">① 수집·이용 목적</p>
             <ul class="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
-              <li>보험계약 상담</li>
-              <li>재무설계서비스</li>
-              <li>보험계약 인수여부 판단 (건강진단 및 계약 적부조사 포함)</li>
+              <li>보험계약의 인수·체결·유지·관리</li>
+              <li>본인 확인 및 보험가입 자격 확인</li>
+              <li>보험료 산출, 정산, 거래 기록 보존</li>
+              <li>민원·분쟁 대응 및 법령상 의무 이행</li>
             </ul>
           </div>
 
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">수집·이용 항목</p>
+            <p class="text-sm font-semibold text-gray-800 mb-2">② 수집·이용 항목</p>
             
             <div class="bg-gray-50 p-3 rounded mb-2">
-              <p class="text-xs font-semibold text-gray-700 mb-1">고유식별정보</p>
-              <p class="text-xs text-gray-600">주민등록번호, 외국인등록번호, 여권번호, 운전면허번호</p>
+              <p class="text-sm font-semibold text-gray-700 mb-2">1) 개인식별 정보</p>
+              <ul class="list-disc list-inside text-xs text-gray-600 ml-4 space-y-1">
+                <li>성명</li>
+                <li>주민등록번호</li>
+                <li>휴대전화번호</li>
+                <li>이메일</li>
+                <li>주소</li>
+              </ul>
             </div>
 
             <div class="bg-gray-50 p-3 rounded mb-2">
-              <p class="text-xs font-semibold text-gray-700 mb-1">민감정보</p>
-              <p class="text-xs text-gray-600">피보험자의 질병·상해에 관한 정보 (진료기록, 상병명, 흡연여부 등), 교통법규 위반정보</p>
+              <p class="text-sm font-semibold text-gray-700 mb-2">2) 사업자·상사 정보</p>
+              <ul class="list-disc list-inside text-xs text-gray-600 ml-4 space-y-1">
+                <li>상호</li>
+                <li>사업자등록번호</li>
+                <li>법인등록번호(해당 시)</li>
+                <li>대표자 성명</li>
+                <li>연락처(유선/휴대전화)</li>
+              </ul>
             </div>
 
             <div class="bg-gray-50 p-3 rounded">
-              <p class="text-xs font-semibold text-gray-700 mb-1">개인(신용)정보</p>
-              <p class="text-xs text-gray-600 mb-1"><strong>일반개인정보:</strong> 성명, 주소, 생년월일, 이메일, 유·무선 전화번호, 국적, 직업, 운전여부, 국내거소신고번호, CI</p>
-              <p class="text-xs text-gray-600 mb-1"><strong>신용거래정보:</strong> 보험계약정보(상품종류, 기간, 보험가입금액 등), 보험금정보(보험금 지급사유, 지급금액 등)</p>
-              <p class="text-xs text-gray-600"><strong>신용능력정보:</strong> 소득 및 재산 정보</p>
+              <p class="text-sm font-semibold text-gray-700 mb-2">3) 차량·보험가입 정보</p>
+              <ul class="list-disc list-inside text-xs text-gray-600 ml-4 space-y-1">
+                <li>차량번호</li>
+                <li>차대번호</li>
+                <li>차량명, 차량등록일자</li>
+                <li>피보험자코드, 계약자코드</li>
+                <li>신청·가입·승인·종료 관련 일시</li>
+                <li>보험료</li>
+                <li>보험증권 번호 및 PDF 파일</li>
+              </ul>
             </div>
           </div>
 
-          <div>
-            <p class="text-sm font-semibold text-gray-800 mb-1">보유 및 이용기간</p>
-            <p class="text-sm text-gray-700">동의일로부터 1년까지</p>
+          <div class="mb-3">
+            <p class="text-sm font-semibold text-gray-800 mb-1">③ 보유·이용 기간</p>
+            <p class="text-sm text-gray-700">보험계약 종료 후 5년(보험업법, 상법 등 관련 법령에 따름)</p>
+            <p class="text-sm text-gray-700">법령에서 별도 의무 보존기간이 정해진 경우 해당 기간 적용</p>
+          </div>
+
+          <div class="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+            <p class="text-sm font-semibold text-gray-800 mb-1">④ 동의 거부 권리</p>
+            <p class="text-sm text-gray-700">동의를 거부할 수 있으나, 동의하지 않을 경우 보험 가입 및 서비스 이용이 불가함.</p>
           </div>
         </div>
 
-        <!-- 2. 제공에 관한 사항 -->
+        <!-- 2. 개인정보 제3자 제공 동의 (필수) -->
         <div class="border-b border-gray-200 pb-4">
-          <h4 class="text-base font-bold text-gray-900 mb-3">2. 제공에 관한 사항</h4>
+          <h4 class="text-lg font-bold text-gray-900 mb-3">■ 2. 개인정보 제3자 제공 동의 (필수)</h4>
+          <p class="text-sm text-gray-700 mb-3">아래의 제3자에게 보험계약 체결·유지·관리 목적을 위해 필요한 개인정보가 제공됩니다.</p>
           
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">제공받는 자</p>
+            <p class="text-sm font-semibold text-gray-800 mb-2">① 제공받는 자</p>
             <ul class="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
-              <li>국내재보험사, 국외재보험사</li>
-              <li>종합신용정보집중기관</li>
-              <li>보험요율산출기관</li>
-              <li>국토교통부</li>
+              <li>현대해상화재보험주식회사(보험사)</li>
+              <li>현대해상 (주)엘케이네트워크(보험대리점)</li>
+              <li>위카모빌리티(주) (전산 시스템 운영사)</li>
             </ul>
           </div>
 
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">제공받는 자의 이용목적</p>
+            <p class="text-sm font-semibold text-gray-800 mb-2">② 제공 목적</p>
             <ul class="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
-              <li><strong>국내재보험사, 국외재보험사:</strong> 보험계약 인수여부 판단</li>
-              <li><strong>종합신용정보집중기관, 보험요율산출기관, 국토교통부:</strong> 개인(신용)정보 조회</li>
+              <li>보험계약 인수·체결·유지·관리</li>
+              <li>보험료 산출 및 정산</li>
+              <li>사고 조사·분쟁 대응</li>
+              <li>보험증권 발급 및 정보 확인</li>
+              <li>전산 시스템 운영 및 처리</li>
             </ul>
           </div>
 
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">제공 항목</p>
-            <div class="bg-gray-50 p-3 rounded text-xs text-gray-700">
-              <p class="mb-1"><strong>고유식별정보:</strong> 주민등록번호, 외국인등록번호, 여권번호, 운전면허번호</p>
-              <p class="mb-1"><strong>민감정보:</strong> 피보험자의 질병·상해에 관한 정보 (진료기록, 상병명, 기왕증 등)</p>
-              <p class="mb-1"><strong>개인(신용)정보:</strong></p>
-              <p class="ml-4">- 일반개인정보: 성명, 국내거소신고번호</p>
-              <p class="ml-4">- 신용거래정보: 보험계약정보(상품종류, 기간, 보험가입금액 등), 보험금정보(보험금 지급사유, 지급금액 등), 계약 전 알릴 의무사항(취미 등)</p>
-            </div>
+            <p class="text-sm font-semibold text-gray-800 mb-2">③ 제공 항목</p>
+            <ul class="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
+              <li>성명</li>
+              <li>주민등록번호</li>
+              <li>사업자등록번호·법인번호</li>
+              <li>연락처</li>
+              <li>상호, 대표자 정보</li>
+              <li>차량정보(차량번호, 차대번호, 차량등록일자 등)</li>
+              <li>신청·승인·가입·종료 관련 이력</li>
+              <li>보험료 및 보험증권 정보</li>
+            </ul>
           </div>
 
-          <div>
-            <p class="text-sm font-semibold text-gray-800 mb-1">보유 및 이용기간</p>
-            <p class="text-sm text-gray-700">동의일로부터 1년까지</p>
+          <div class="mb-3">
+            <p class="text-sm font-semibold text-gray-800 mb-1">④ 보유·이용 기간</p>
+            <p class="text-sm text-gray-700">보험계약 종료 후 법령에서 정한 기간까지 보유</p>
           </div>
 
-          <div class="mt-3 bg-blue-50 p-3 rounded border-l-2 border-blue-300">
-            <p class="text-xs text-gray-700">
-              <strong>※ 주의사항:</strong> 외국 재보험사의 국내 지점이 보험계약 인수여부 판단 지원 등 업무를 위탁하기 위한 경우 별도의 동의 없이 외국 소재 본점에 귀하의 정보를 이전할 수 있습니다.
-            </p>
+          <div class="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+            <p class="text-sm font-semibold text-gray-800 mb-1">⑤ 동의 거부 권리</p>
+            <p class="text-sm text-gray-700">동의를 거부할 수 있으나, 보험 가입 및 서비스 이용이 불가함.</p>
           </div>
         </div>
 
-        <!-- 3. 조회에 관한 사항 -->
+        <!-- 3. 고유식별정보(주민등록번호) 처리 동의 (필수) -->
         <div class="border-b border-gray-200 pb-4">
-          <h4 class="text-base font-bold text-gray-900 mb-3">3. 조회에 관한 사항</h4>
+          <h4 class="text-lg font-bold text-gray-900 mb-3">■ 3. 고유식별정보(주민등록번호) 처리 동의 (필수)</h4>
+          <p class="text-sm text-gray-700 mb-3">회사는 보험계약 체결 및 법령상 의무 이행을 위하여 아래의 <strong>고유식별정보(주민등록번호)</strong>를 처리합니다.</p>
           
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">조회 대상 기관</p>
+            <p class="text-sm font-semibold text-gray-800 mb-2">① 처리 목적</p>
             <ul class="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
-              <li>종합신용정보집중기관</li>
-              <li>보험요율산출기관</li>
-              <li>국토교통부</li>
+              <li>본인확인</li>
+              <li>보험계약 체결·관리</li>
+              <li>법령상 의무 이행</li>
             </ul>
           </div>
 
           <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">조회 목적</p>
-            <ul class="list-disc list-inside text-sm text-gray-700 ml-4 space-y-1">
-              <li><strong>종합신용정보집중기관:</strong> 보험계약 인수여부 결정을 위한 판단, 보험 가입한도 조회, 실제 발생하는 손해를 보상하는 실손형 보험의 중복확인, 새로운 보험계약 체결 시 기존 보험계약과의 중요사항 비교설명</li>
-              <li><strong>보험요율산출기관, 국토교통부:</strong> 보험계약 인수여부 결정을 위한 판단, 기타 법령에 의한 업무수행</li>
-            </ul>
-          </div>
-
-          <div class="mb-3">
-            <p class="text-sm font-semibold text-gray-800 mb-2">조회 항목</p>
-            <div class="bg-gray-50 p-3 rounded text-xs text-gray-700">
-              <p class="mb-1"><strong>고유식별정보:</strong> 주민등록번호, 외국인등록번호, 여권번호, 운전면허번호</p>
-              <p class="mb-1"><strong>민감정보:</strong> 피보험자의 질병·상해에 관한 정보 (진료기록, 상병명 등), 교통법규위반정보</p>
-              <p class="mb-1"><strong>개인(신용)정보:</strong></p>
-              <p class="ml-4">- 일반개인정보: 성명, 국내거소신고번호</p>
-              <p class="ml-4">- 신용거래정보: 보험계약정보(상품종류, 기간, 보험료, 보험가입금액 등), 보험금정보(보험금 지급사유, 지급금액 등)</p>
-              <p class="ml-4">- 공공정보 등: 군운전경력정보*, 자동차등록 관련 정보</p>
-            </div>
-            <p class="text-xs text-gray-500 mt-2">
-              * 당사의 요청에 따라 보험요율 산출기관이 행정정보공동이용센터를 통해 병무청으로부터 제공받는 정보 (단, 요율 산출에 필요한 보험계약에 한함)
-            </p>
+            <p class="text-sm font-semibold text-gray-800 mb-2">② 처리 항목</p>
+            <p class="text-sm text-gray-700">주민등록번호</p>
           </div>
 
           <div>
-            <p class="text-sm font-semibold text-gray-800 mb-1">조회 동의의 효력기간</p>
-            <p class="text-sm text-gray-700">동의일로부터 보험계약의 청약 시까지 (최대 1년)</p>
+            <p class="text-sm font-semibold text-gray-800 mb-1">③ 보유 기간</p>
+            <p class="text-sm text-gray-700">보험계약 종료 후 법령에서 정한 기간까지 보유</p>
           </div>
         </div>
 
-        <!-- 4. 업무위탁 -->
-        <div class="border-b border-gray-200 pb-4">
-          <h4 class="text-base font-bold text-gray-900 mb-3">4. 업무위탁</h4>
-          <div class="bg-gray-50 p-3 rounded">
-            <p class="text-sm text-gray-700">
-              업무위탁을 목적으로 개인(신용)정보를 처리하는 경우 별도의 동의 없이 업무 수탁자에게 귀하의 정보를 제공할 수 있습니다. (홈페이지[www.hi.co.kr]에서 확인 가능)
-            </p>
+        <!-- 동의 여부 -->
+        <div class="bg-blue-50 border-2 border-blue-200 p-4 rounded-lg">
+          <h4 class="text-lg font-bold text-gray-900 mb-3">■ 동의 여부</h4>
+          <p class="text-sm text-gray-700 mb-3">본인은 위 내용을 확인하였으며, 아래 항목에 모두 동의합니다.</p>
+          <div class="space-y-2">
+            <div class="flex items-center">
+              <i class="bi bi-check-circle text-blue-600 mr-2"></i>
+              <span class="text-sm text-gray-700">개인정보 수집·이용 동의</span>
+            </div>
+            <div class="flex items-center">
+              <i class="bi bi-check-circle text-blue-600 mr-2"></i>
+              <span class="text-sm text-gray-700">개인정보 제3자 제공 동의</span>
+            </div>
+            <div class="flex items-center">
+              <i class="bi bi-check-circle text-blue-600 mr-2"></i>
+              <span class="text-sm text-gray-700">고유식별정보(주민등록번호) 처리 동의</span>
+            </div>
           </div>
         </div>
-
-        <!-- 5. 미성년자 관련 안내 -->
-        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-          <p class="text-xs text-gray-700 leading-relaxed">
-            <strong>※ 미성년자 관련 안내:</strong> 만14세 미만의 경우 법정대리인이 작성 후 친권자 서명을 하시고, 만14세 이상 미성년자는 미성년 본인 직접 동의 또는 법정대리인의 대리동의 후 친권자 서명하시기 바랍니다.
-          </p>
+      </div>
+      <div class="border-t border-gray-200 mt-4 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 pb-4">
+        <div class="flex items-center space-x-4">
+          <label class="inline-flex items-center space-x-1">
+            <input type="radio" name="privacy_modal_consent" value="agree"
+                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" checked>
+            <span class="text-sm text-gray-700 font-medium">동의합니다</span>
+          </label>
+          <label class="inline-flex items-center space-x-1">
+            <input type="radio" name="privacy_modal_consent" value="disagree"
+                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500">
+            <span class="text-sm text-gray-700 font-medium">동의하지 않습니다</span>
+          </label>
         </div>
-
-        <!-- 연락처 정보 -->
-        <div class="bg-gray-50 p-4 rounded-lg border-t-2 border-gray-200">
-          <p class="text-sm font-semibold text-gray-800 mb-2">문의처</p>
-          <div class="text-xs text-gray-700 space-y-1">
-            <p><strong>고객콜센터:</strong> 1588-5656</p>
-            <p><strong>홈페이지:</strong> www.hi.co.kr</p>
-            <p><strong>정보보호파트 승인:</strong> 제 90000128 호 (2023.12.01)</p>
-          </div>
-        </div>
-
-        <div class="pt-4 border-t border-gray-200">
-          <p class="text-xs text-gray-500 text-center">
-            본 동의서는 현대해상화재보험주식회사의 「고객정보 관리 및 가입설계를 위한 개인(신용)정보 처리 상세 동의서」를 기반으로 작성되었습니다.
-          </p>
+        <div class="flex justify-end space-x-2">
+          <button type="button" onclick="confirmPrivacyModal()"
+                  class="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+            확인
+          </button>
+          <button type="button" onclick="closePrivacyModal()"
+                  class="px-4 py-2 bg-gray-100 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors">
+            닫기
+          </button>
         </div>
       </div>
     </div>
@@ -406,17 +434,33 @@ function togglePrivacyAgreement() {
   const memberType = document.querySelector('input[name="member_type"]:checked').value;
   const privacySection = document.getElementById('privacy-agreement-section');
   const privacyCheckbox = document.getElementById('privacy_agreement');
+  const corporationLabel = document.getElementById('corporation-label-text');
+  const corporationInput = document.getElementById('corporation_number');
   
-  if (memberType === '개인') {
+  // 개인정보동의는 항상 표시 및 필수
+  if (privacySection) {
     privacySection.classList.remove('hidden');
-    if (privacyCheckbox) {
-      privacyCheckbox.required = true;
+  }
+  if (privacyCheckbox) {
+    privacyCheckbox.required = true;
+  }
+  
+  // 개인 선택 시 법인번호 → 주민등록번호로 변경
+  if (memberType === '개인') {
+    if (corporationLabel) {
+      corporationLabel.textContent = '주민등록번호';
+    }
+    if (corporationInput) {
+      corporationInput.required = true;
+      corporationInput.setAttribute('placeholder', '주민등록번호를 입력하세요');
     }
   } else {
-    privacySection.classList.add('hidden');
-    if (privacyCheckbox) {
-      privacyCheckbox.required = false;
-      privacyCheckbox.checked = false;
+    if (corporationLabel) {
+      corporationLabel.textContent = '법인번호';
+    }
+    if (corporationInput) {
+      corporationInput.required = false;
+      corporationInput.removeAttribute('placeholder');
     }
   }
 }
@@ -433,6 +477,24 @@ function closePrivacyModal() {
   if (modal) {
     modal.classList.add('hidden');
   }
+}
+
+function confirmPrivacyModal() {
+  const agreeRadio = document.querySelector('input[name="privacy_modal_consent"][value="agree"]');
+  const disagreeRadio = document.querySelector('input[name="privacy_modal_consent"][value="disagree"]');
+  const checkbox = document.getElementById('privacy_agreement');
+  if (!checkbox) {
+    closePrivacyModal();
+    return;
+  }
+
+  if (agreeRadio && agreeRadio.checked) {
+    checkbox.checked = true;
+  } else if (disagreeRadio && disagreeRadio.checked) {
+    checkbox.checked = false;
+  }
+
+  closePrivacyModal();
 }
 
 // 파일 업로드 처리
@@ -468,10 +530,14 @@ function handleFileSelect(file) {
   }
 }
 
-// 페이지 로드 시 초기화
-document.addEventListener('DOMContentLoaded', function() {
-  // 초기 상태 설정
-  togglePrivacyAgreement();
+  // 페이지 로드 시 초기화
+  document.addEventListener('DOMContentLoaded', function() {
+    // 초기 상태 설정 (개인정보동의는 항상 표시)
+    const privacySection = document.getElementById('privacy-agreement-section');
+    if (privacySection) {
+      privacySection.classList.remove('hidden');
+    }
+    togglePrivacyAgreement();
   
   // 파일 업로드 이벤트 리스너
   const fileInput = document.getElementById('file-upload');
@@ -521,25 +587,54 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
+  // 파트너그룹 선택 시 보험료 설정란 표시/숨김
+  function togglePremiumSetting() {
+    const select = document.getElementById('partner-group-select-register');
+    const premiumSection = document.getElementById('premium-setting-section');
+    
+    if (select && premiumSection) {
+      const selectedOption = select.options[select.selectedIndex];
+      const groupName = selectedOption.getAttribute('data-group-name') || '';
+      
+      if (groupName === '위탁운영파트너 그룹') {
+        premiumSection.style.display = 'block';
+      } else {
+        premiumSection.style.display = 'none';
+      }
+    }
+  }
+  
   // 폼 제출 전 검증
   const registerForm = document.getElementById('register-form');
   if (registerForm) {
     registerForm.addEventListener('submit', function(e) {
+      // 개인정보동의는 항상 필수
+      const privacyCheckbox = document.getElementById('privacy_agreement');
+      if (privacyCheckbox && !privacyCheckbox.checked) {
+        e.preventDefault();
+        alert('개인정보 수집 및 이용에 동의해주세요.');
+        privacyCheckbox.focus();
+        return false;
+      }
+      
+      // 개인 선택 시 주민등록번호 필수
       const memberType = document.querySelector('input[name="member_type"]:checked');
       if (memberType && memberType.value === '개인') {
-        const privacyCheckbox = document.getElementById('privacy_agreement');
-        if (privacyCheckbox && !privacyCheckbox.checked) {
+        const corporationInput = document.getElementById('corporation_number');
+        if (corporationInput && !corporationInput.value.trim()) {
           e.preventDefault();
-          alert('개인 회원가입 시 개인정보이용동의서에 동의해주세요.');
-          privacyCheckbox.focus();
+          alert('주민등록번호를 입력해주세요.');
+          corporationInput.focus();
           return false;
         }
       }
+      
       return true;
     });
   }
 });
 </script>
 {% endblock %}
+
 
 

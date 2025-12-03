@@ -207,7 +207,7 @@ def migrate_database():
             SET username = 'hyundai', 
                 role = 'admin',
                 partner_group_id = NULL,
-                company_name = '현대해상30일책임보험전산',
+                company_name = '현대해상중고차매매업자 1개월책임보험전산',
                 representative = '전체관리자'
             WHERE username = 'admin' OR role IS NULL
         """)
@@ -298,7 +298,7 @@ if __name__ == "__main__":
     # data 디렉토리 생성
     os.makedirs('data', exist_ok=True)
     
-    print("🚀 현대해상30일책임보험전산 데이터베이스 마이그레이션")
+    print("🚀 현대해상중고차매매업자 1개월책임보험전산 데이터베이스 마이그레이션")
     print("=" * 50)
     
     success = migrate_database()

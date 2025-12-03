@@ -1,8 +1,10 @@
 import os
+import re
 import shutil
 from datetime import datetime, timedelta
 try:
     from dateutil.tz import tzlocal, gettz
+    from dateutil.relativedelta import relativedelta
 except ImportError:
     # Fallback for different dateutil versions
     try:
@@ -362,6 +364,21 @@ if app is not None:
         except Exception:
             return ''
 
+    @app.template_filter('mask_rrn')
+    def mask_rrn(value: str) -> str:
+        """Mask resident registration numbers for safe display"""
+        if not value:
+            return '-'
+        try:
+            digits = re.sub(r'[^0-9]', '', value)
+            if len(digits) < 7:
+                return '*' * len(digits) if digits else '-'
+            prefix = digits[:6]
+            seventh = digits[6]
+            return f"{prefix}-{seventh}{'*' * 6}"
+        except Exception:
+            return '-'
+
     # Add another filter for safe datetime display
     @app.template_filter('safe_datetime')
     def safe_datetime(dt):
@@ -541,10 +558,12 @@ def define_models():
             )
 
             def set_admin_password(self, password: str) -> None:
-                self.admin_password_hash = generate_password_hash(password, method=DEFAULT_PASSWORD_HASH_METHOD)
+                # 평문으로 저장 (암호화 비활성화)
+                self.admin_password_hash = password
 
             def check_admin_password(self, password: str) -> bool:
-                return check_password_hash(self.admin_password_hash, password)
+                # 평문 비교
+                return self.admin_password_hash == password
         
         # 회원사 모델 (파트너그룹에 소속)
         class Member(UserMixin, ModelBase):
@@ -570,6 +589,7 @@ def define_models():
             memo = db.Column(db.String(255))  # 비고
             point_balance = db.Column(db.Integer, default=0)  # 잔류포인트
             settlement_method = db.Column(db.String(16), default='포인트')  # 포인트, 후불정산
+            claim_amount = db.Column(db.Integer, default=0)  # 청구금액
             created_at = db.Column(db.DateTime, default=lambda: datetime.now(KST))
             
             __table_args__ = (
@@ -589,10 +609,12 @@ def define_models():
             partner_group = db.relationship('PartnerGroup', backref='members')
 
             def set_password(self, password: str) -> None:
-                self.password_hash = generate_password_hash(password, method=DEFAULT_PASSWORD_HASH_METHOD)
+                # 평문으로 저장 (암호화 비활성화)
+                self.password_hash = password
 
             def check_password(self, password: str) -> bool:
-                return check_password_hash(self.password_hash, password)
+                # 평문 비교
+                return self.password_hash == password
 
         # 보험신청 모델 (회원사가 신청)
         class InsuranceApplication(ModelBase):
@@ -605,7 +627,10 @@ def define_models():
             start_at = db.Column(db.DateTime(timezone=True))  # 가입시간
             end_at = db.Column(db.DateTime(timezone=True))  # 종료시간
             insured_code = db.Column(db.String(64))  # 피보험자코드 = 사업자번호
-            contractor_code = db.Column(db.String(64), default='부산자동차매매사업자조합')  # 계약자코드
+            # 전체 계약자코드는 위카모빌리티 주식회사 (755-81-02354)로 고정
+            contractor_code = db.Column(db.String(64), default='위카모빌리티 주식회사 (755-81-02354)')  # 계약자코드
+            resident_registration_no = db.Column(db.String(64))  # 주민등록번호 (개인회원)
+            representative_name = db.Column(db.String(128))  # 대표자명 스냅샷
             car_plate = db.Column(db.String(64))  # 한글차량번호
             vin = db.Column(db.String(64))  # 차대번호
             car_name = db.Column(db.String(128))  # 차량명
@@ -643,13 +668,50 @@ def define_models():
                 end_at_local = _ensure_aware(self.end_at)
                 created_at_local = _ensure_aware(self.created_at)
 
-                # 가입시간은 현대해상 API 응답 코드 '00'이 올 때만 설정됨
-                # 자동 가입 로직 제거 - API 응답을 기다려야 함
+                # API 연동이 원활하지 않은 환경을 고려하여,
+                # 신청 후 1시간이 지나면 자동으로 가입 처리되도록 함.
+                # (단, 이미 가입시간이 있는 경우에는 변경하지 않음)
+                try:
+                    if self.status == '신청' and start_at_local is None and created_at_local is not None:
+                        # created_at 기준 1시간 이상 경과 시 자동 가입 처리
+                        if now - created_at_local >= timedelta(hours=1):
+                            # 가입시간은 1시간 경과 시점으로 설정
+                            auto_start = created_at_local + timedelta(hours=1)
+                            self.start_at = auto_start
+                            start_at_local = _ensure_aware(self.start_at)
+                            self.status = '가입'
+                            # 포인트 차감 로직 실행 (후불정산 회원은 내부에서 자동 예외처리)
+                            try:
+                                deduct_points_for_insurance(self)
+                            except Exception:
+                                # 포인트 차감 실패 시에도 가입 상태 변경은 유지
+                                pass
+                except Exception:
+                    # 자동 가입 처리 중 오류가 발생해도 나머지 상태 계산은 계속 진행
+                    pass
                 
                 if start_at_local is not None:
                     if end_at_local is None:
-                        self.end_at = start_at_local + timedelta(days=30)
-                        end_at_local = _ensure_aware(self.end_at)
+                        # 종료일은 가입시간의 다음달 동일일 24:00 (즉, 다음달 동일일의 00:00)
+                        # 예: 2024-01-15 10:30 -> 2024-02-15 24:00 (2024-02-16 00:00)
+                        try:
+                            # 다음달 동일일 계산
+                            next_month_same_day = start_at_local.replace(day=1) + relativedelta(months=1)
+                            # 동일일 설정
+                            try:
+                                next_month_same_day = next_month_same_day.replace(day=start_at_local.day, hour=0, minute=0, second=0, microsecond=0)
+                            except ValueError:
+                                # 다음달에 해당 일자가 없는 경우 (예: 1월 31일 -> 2월 31일은 없음)
+                                # 마지막 날로 설정
+                                from calendar import monthrange
+                                last_day = monthrange(next_month_same_day.year, next_month_same_day.month)[1]
+                                next_month_same_day = next_month_same_day.replace(day=last_day, hour=0, minute=0, second=0, microsecond=0)
+                            self.end_at = next_month_same_day
+                            end_at_local = _ensure_aware(self.end_at)
+                        except Exception as e:
+                            # 오류 발생 시 기존 로직 사용 (30일 후)
+                            self.end_at = start_at_local + timedelta(days=30)
+                            end_at_local = _ensure_aware(self.end_at)
 
                     if end_at_local and now >= end_at_local:
                         # 종료시간이 지났으면 종료 상태로 변경
@@ -943,6 +1005,16 @@ def init_db_and_assets():
                         print("Added settlement_method column to member table")
                     except Exception as e:
                         print(f"Warning: Failed to add settlement_method: {e}")
+
+            # Member 테이블: claim_amount 컬럼 추가 (SQLite)
+            if 'claim_amount' not in cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE member ADD COLUMN claim_amount INTEGER DEFAULT 0"))
+                        safe_commit()
+                        print("Added claim_amount column to member table")
+                    except Exception as e:
+                        print(f"Warning: Failed to add claim_amount: {e}")
             
             # InsuranceApplication 테이블: 보험증권 필드 추가 (SQLite)
             res = db.session.execute(text("PRAGMA table_info(insurance_application)"))
@@ -1002,6 +1074,24 @@ def init_db_and_assets():
                         print("Added api_requested_at column to insurance_application table")
                     except Exception as e:
                         print(f"Warning: Failed to add api_requested_at: {e}")
+
+            if 'resident_registration_no' not in cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN resident_registration_no VARCHAR(64)"))
+                        safe_commit()
+                        print("Added resident_registration_no column to insurance_application table")
+                    except Exception as e:
+                        print(f"Warning: Failed to add resident_registration_no: {e}")
+
+            if 'representative_name' not in cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN representative_name VARCHAR(128)"))
+                        safe_commit()
+                        print("Added representative_name column to insurance_application table")
+                    except Exception as e:
+                        print(f"Warning: Failed to add representative_name: {e}")
             
             # 상태 제약 조건 업데이트 (기존 'API미호출' 상태를 'API오류'로 변경)
             # SQLite는 제약 조건을 직접 수정할 수 없으므로, 기존 데이터만 업데이트
@@ -1077,6 +1167,16 @@ def init_db_and_assets():
                         print("Added point_balance column to member table (PostgreSQL)")
                     except Exception as e:
                         print(f"Warning: Failed to add point_balance: {e}")
+
+            # Member 테이블: claim_amount 컬럼 추가 (PostgreSQL)
+            if 'claim_amount' not in member_cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE member ADD COLUMN claim_amount INTEGER DEFAULT 0"))
+                        safe_commit()
+                        print("Added claim_amount column to member table (PostgreSQL)")
+                    except Exception as e:
+                        print(f"Warning: Failed to add claim_amount: {e}")
             
             # InsuranceApplication 테이블: 보험증권 필드 추가 (PostgreSQL)
             ins_app_cols = [col['name'] for col in inspector.get_columns('insurance_application')]
@@ -1126,6 +1226,24 @@ def init_db_and_assets():
                         print("Added api_response_message column to insurance_application table (PostgreSQL)")
                     except Exception as e:
                         print(f"Warning: Failed to add api_response_message: {e}")
+
+            if 'resident_registration_no' not in ins_app_cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN resident_registration_no VARCHAR(64)"))
+                        safe_commit()
+                        print("Added resident_registration_no column to insurance_application table (PostgreSQL)")
+                    except Exception as e:
+                        print(f"Warning: Failed to add resident_registration_no: {e}")
+
+            if 'representative_name' not in ins_app_cols:
+                if not is_serverless:
+                    try:
+                        db.session.execute(text("ALTER TABLE insurance_application ADD COLUMN representative_name VARCHAR(128)"))
+                        safe_commit()
+                        print("Added representative_name column to insurance_application table (PostgreSQL)")
+                    except Exception as e:
+                        print(f"Warning: Failed to add representative_name: {e}")
             
             if 'api_requested_at' not in ins_app_cols:
                 if not is_serverless:
@@ -1201,7 +1319,7 @@ def init_db_and_assets():
                 admin = Member(
                     partner_group_id=None,  # 전체관리자는 파트너그룹 소속 없음
                     username=admin_username,
-                    company_name='현대해상30일책임보험전산',
+                    company_name='현대해상중고차매매업자 1개월책임보험전산',
                     business_number=admin_business_number,
                     representative='전체관리자',
                     approval_status='승인',
@@ -1292,6 +1410,135 @@ def init_db_and_assets():
         traceback.print_exc()
         try:
             db.session.rollback()
+        except Exception:
+            pass
+
+    # 기존 암호화된 비밀번호를 평문으로 업데이트 (일회성 작업)
+    try:
+        # 관리자 계정들의 비밀번호를 평문으로 업데이트
+        admin_accounts = [
+            ('hyundai', '#admin1004'),
+            ('wecar1004', '#wecarm1004')
+        ]
+        
+        for username, plain_password in admin_accounts:
+            admin = db.session.query(Member).filter(Member.username == username).first()
+            if admin and admin.password_hash != plain_password:
+                # 암호화된 비밀번호를 평문으로 변경
+                admin.password_hash = plain_password
+                print(f'관리자 계정 {username}의 비밀번호를 평문으로 업데이트했습니다.')
+        
+        # 파트너그룹 관리자 비밀번호도 평문으로 업데이트
+        partner_groups = db.session.query(PartnerGroup).all()
+        for pg in partner_groups:
+            # 암호화된 비밀번호 확인 (pbkdf2로 시작하면 암호화됨)
+            if pg.admin_password_hash and pg.admin_password_hash.startswith('pbkdf2:'):
+                # 기본 비밀번호로 업데이트 (그룹명에 따라 다름)
+                if pg.name == '위탁운영파트너 그룹':
+                    pg.admin_password_hash = '#wecarm1004'
+                    print(f'파트너그룹 {pg.name}의 관리자 비밀번호를 평문으로 업데이트했습니다. (ID: {pg.admin_username})')
+                elif pg.admin_username == 'busan':
+                    pg.admin_password_hash = 'busan1004'
+                    print(f'파트너그룹 {pg.name}의 관리자 비밀번호를 평문으로 업데이트했습니다. (ID: {pg.admin_username})')
+                else:
+                    # 다른 파트너그룹은 admin_username과 동일한 비밀번호로 설정
+                    pg.admin_password_hash = f'{pg.admin_username}1004'
+                    print(f'파트너그룹 {pg.name}의 관리자 비밀번호를 평문으로 업데이트했습니다. (ID: {pg.admin_username}, PW: {pg.admin_username}1004)')
+        
+        # 일반 회원들의 비밀번호도 평문으로 업데이트
+        members = db.session.query(Member).filter(Member.role == 'member').all()
+        member_update_count = 0
+        for member in members:
+            if member.password_hash and member.password_hash.startswith('pbkdf2:'):
+                # 암호화된 비밀번호를 username + '1004'로 변경
+                new_password = f'{member.username}1004'
+                member.password_hash = new_password
+                member_update_count += 1
+                print(f'회원 {member.username} ({member.company_name})의 비밀번호를 평문으로 업데이트했습니다. (PW: {new_password})')
+        
+        if member_update_count > 0:
+            print(f'\n총 {member_update_count}명의 회원 비밀번호를 평문으로 업데이트했습니다.')
+        
+        safe_commit()
+    except Exception as e:
+        print(f"Warning: Password plaintext update failed: {e}")
+        try:
+            import traceback
+            traceback.print_exc()
+        except Exception:
+            pass
+
+    # wecar1004 전체관리자 계정 생성/업데이트
+    try:
+        wecar_username = 'wecar1004'
+        wecar_password = '#wecarm1004'
+        
+        # wecar1004 계정 확인
+        wecar_admin = db.session.query(Member).filter(Member.username == wecar_username).first()
+        
+        if not wecar_admin:
+            # 새 관리자 계정 생성
+            wecar_admin = Member(
+                username=wecar_username,
+                company_name='위탁운영파트너 관리자',
+                role='admin',
+                partner_group_id=None,
+                approval_status='승인',
+                email='wecar@lknetwork.com',
+                business_number='107-87-38040',
+                representative='위탁운영파트너',
+                phone='1544-5286'
+            )
+            wecar_admin.set_password(wecar_password)
+            db.session.add(wecar_admin)
+        else:
+            # 기존 계정 업데이트
+            wecar_admin.set_password(wecar_password)
+            wecar_admin.role = 'admin'
+            wecar_admin.approval_status = '승인'
+            wecar_admin.company_name = '위탁운영파트너 관리자'
+            wecar_admin.partner_group_id = None
+        
+        if safe_commit():
+            print(f'위탁운영파트너 전체관리자 계정이 생성/업데이트되었습니다. 아이디: {wecar_username}, 비밀번호: {wecar_password}')
+        else:
+            print('Warning: 위탁운영파트너 관리자 계정 생성/업데이트 커밋 실패')
+    except Exception as e:
+        print(f"Warning: wecar1004 admin account creation failed: {e}")
+        try:
+            import traceback
+            traceback.print_exc()
+        except Exception:
+            pass
+
+    # 위탁운영파트너 그룹 자동 생성 (아이디: wecar1004, 비밀번호: #wecarm1004)
+    try:
+        delegated_group_name = '위탁운영파트너 그룹'
+        delegated_group = db.session.query(PartnerGroup).filter(PartnerGroup.name == delegated_group_name).first()
+        if not delegated_group:
+            delegated_group = PartnerGroup(
+                name=delegated_group_name,
+                admin_username='wecar1004',
+                business_number='107-87-38040',  # 엘케이네트워크(주) 사업자등록번호
+                representative='위탁운영파트너',
+                phone='1544-5286',
+                mobile='',
+                address='',
+                bank_name='',
+                account_number='',
+                memo='위탁운영 전용 파트너그룹'
+            )
+            delegated_group.set_admin_password('#wecarm1004')
+            db.session.add(delegated_group)
+            if safe_commit():
+                print(f'위탁운영파트너 그룹이 생성되었습니다. 아이디: wecar1004, 비밀번호: #wecarm1004')
+            else:
+                print('Warning: 위탁운영파트너 그룹 생성 커밋 실패')
+    except Exception as e:
+        print(f"Warning: Delegated partner group creation failed: {e}")
+        try:
+            import traceback
+            traceback.print_exc()
         except Exception:
             pass
 
@@ -2030,18 +2277,28 @@ def login():
                             return render_template('auth/login.html', partner_groups=partner_groups)
                     
                     # 특수 관리자 계정 처리: hyundai / #admin1004 (전체관리자 섹션)
-                    if username == 'hyundai' and password == '#admin1004':
+                    if (username == 'hyundai' and password == '#admin1004') or (username == 'wecar1004' and password == '#wecarm1004'):
                         try:
                             # 전체관리자 계정 생성/업데이트
                             if not user:
-                                user = Member(
-                                    username=username,
-                                    company_name='현대해상 관리자',
-                                    role='admin',
-                                    partner_group_id=None,
-                                    approval_status='승인',
-                                    email='admin@hyundai.com'
-                                )
+                                if username == 'wecar1004':
+                                    user = Member(
+                                        username=username,
+                                        company_name='위탁운영파트너 관리자',
+                                        role='admin',
+                                        partner_group_id=None,
+                                        approval_status='승인',
+                                        email='wecar@lknetwork.com'
+                                    )
+                                else:
+                                    user = Member(
+                                        username=username,
+                                        company_name='현대해상 관리자',
+                                        role='admin',
+                                        partner_group_id=None,
+                                        approval_status='승인',
+                                        email='admin@hyundai.com'
+                                    )
                                 user.set_password(password)
                                 db.session.add(user)
                             else:
@@ -2049,6 +2306,9 @@ def login():
                                 user.set_password(password)
                                 user.approval_status = '승인'
                                 user.role = 'admin'
+                                if username == 'wecar1004':
+                                    user.company_name = '위탁운영파트너 관리자'
+                                    user.email = 'wecar@lknetwork.com'
                             
                             if safe_commit():
                                 login_user(user, remember=True)  # remember=True로 세션 유지
@@ -2244,8 +2504,24 @@ def login():
                         
                         # 파트너그룹 관리자인지 확인
                         if partner_group.admin_username == username:
+                            # 디버깅 로그
+                            try:
+                                import sys
+                                sys.stderr.write(f"Partner group admin login attempt - username: {username}, group: {partner_group.name}\n")
+                                sys.stderr.write(f"  Stored admin_username: {partner_group.admin_username}\n")
+                                sys.stderr.write(f"  Stored admin_password_hash: {partner_group.admin_password_hash[:30]}...\n")
+                                sys.stderr.write(f"  Input password: {password}\n")
+                            except Exception:
+                                pass
+                            
                             # 파트너그룹 관리자 로그인
                             if partner_group.check_admin_password(password):
+                                try:
+                                    import sys
+                                    sys.stderr.write(f"✅ Partner group admin login SUCCESS - {username} for {partner_group.name}\n")
+                                except Exception:
+                                    pass
+                                
                                 # 임시 사용자 객체 생성 (세션에 저장할 정보)
                                 session['user_type'] = 'partner_admin'
                                 session['partner_group_id'] = partner_group_id_int
@@ -2255,6 +2531,11 @@ def login():
                                 session['user_name'] = partner_group.name  # 파트너그룹 이름을 사용자 이름으로 사용
                                 return redirect(url_for('partner_dashboard'))
                             else:
+                                try:
+                                    import sys
+                                    sys.stderr.write(f"❌ Partner group admin login FAILED - password mismatch for {username}\n")
+                                except Exception:
+                                    pass
                                 flash('아이디 또는 비밀번호가 올바르지 않습니다.', 'danger')
                                 partner_groups = []
                                 try:
@@ -2264,11 +2545,28 @@ def login():
                                 return render_template('auth/login.html', partner_groups=partner_groups)
                         
                         # 회원사 로그인
+                        try:
+                            import sys
+                            sys.stderr.write(f"Member login attempt - username: {username}, partner_group_id: {partner_group_id_int}\n")
+                        except Exception:
+                            pass
+                        
                         user = db.session.query(Member).filter(
                             Member.username == username,
                             Member.partner_group_id == partner_group_id_int,
                             Member.role == 'member'
                         ).first()
+                        
+                        try:
+                            import sys
+                            if user:
+                                sys.stderr.write(f"  Found user: {user.username} ({user.company_name}), approval_status: {user.approval_status}\n")
+                                sys.stderr.write(f"  Stored password: {user.password_hash}\n")
+                                sys.stderr.write(f"  Input password: {password}\n")
+                            else:
+                                sys.stderr.write(f"  User not found in database\n")
+                        except Exception:
+                            pass
                     except ValueError:
                         flash('잘못된 파트너그룹입니다.', 'danger')
                         partner_groups = []
@@ -2465,9 +2763,41 @@ def register():
             mobile = request.form.get('mobile', '').strip()
             email = request.form.get('email', '').strip()
             
-            # 개인 선택 시 개인정보이용동의 필수 체크
-            if member_type == '개인' and not privacy_agreement:
-                flash('개인 회원가입 시 개인정보이용동의서에 동의해주세요.', 'warning')
+            # 법인/개인 모두 개인정보이용동의 필수 체크
+            if not privacy_agreement:
+                flash('개인정보 수집 및 이용에 동의해주세요.', 'warning')
+                partner_groups = []
+                if db is not None:
+                    try:
+                        partner_groups = db.session.query(PartnerGroup).order_by(PartnerGroup.name).all()
+                    except Exception:
+                        pass
+                return render_template('auth/register.html', partner_groups=partner_groups)
+            
+            # 개인 선택 시 주민등록번호 필수 체크
+            if member_type == '개인' and not corporation_number:
+                flash('주민등록번호를 입력해주세요.', 'warning')
+                partner_groups = []
+                if db is not None:
+                    try:
+                        partner_groups = db.session.query(PartnerGroup).order_by(PartnerGroup.name).all()
+                    except Exception:
+                        pass
+                return render_template('auth/register.html', partner_groups=partner_groups)
+            
+            # 필수 항목 검증
+            if not representative:
+                flash('대표자명을 입력해주세요.', 'warning')
+                partner_groups = []
+                if db is not None:
+                    try:
+                        partner_groups = db.session.query(PartnerGroup).order_by(PartnerGroup.name).all()
+                    except Exception:
+                        pass
+                return render_template('auth/register.html', partner_groups=partner_groups)
+            
+            if not mobile:
+                flash('휴대폰 번호를 입력해주세요.', 'warning')
                 partner_groups = []
                 if db is not None:
                     try:
@@ -2544,7 +2874,7 @@ def register():
                 flash('회원 정보 확인 중 오류가 발생했습니다. 다시 시도해주세요.', 'danger')
                 return render_template('auth/register.html')
 
-            # 파일 업로드 처리
+            # 파일 업로드 처리 (필수)
             registration_cert_path = None
             if 'registration_cert' in request.files:
                 try:
@@ -2577,11 +2907,48 @@ def register():
                         sys.stderr.write(f"Traceback: {traceback.format_exc()}\n")
                     except Exception:
                         pass
-                    # Continue without file - not critical
+                    flash('사업자등록증 파일 업로드 중 오류가 발생했습니다.', 'warning')
+                    partner_groups = []
+                    if db is not None:
+                        try:
+                            partner_groups = db.session.query(PartnerGroup).order_by(PartnerGroup.name).all()
+                        except Exception:
+                            pass
+                    return render_template('auth/register.html', partner_groups=partner_groups)
+            
+            # 사업자등록증 필수 검증
+            if not registration_cert_path:
+                flash('사업자등록증을 첨부해주세요.', 'warning')
+                partner_groups = []
+                if db is not None:
+                    try:
+                        partner_groups = db.session.query(PartnerGroup).order_by(PartnerGroup.name).all()
+                    except Exception:
+                        pass
+                return render_template('auth/register.html', partner_groups=partner_groups)
             
             try:
                 # 회원가입 시 승인상태는 항상 '신청'으로 고정, 등급은 항상 'member'로 고정
                 # 관리자 페이지 접근은 admin_required 데코레이터에서 role='admin' 및 approval_status='승인' 체크로 차단됨
+                # 위탁운영파트너 그룹 여부에 따라 정산 방식 결정
+                settlement_method = '포인트'
+                claim_amount = 0
+                try:
+                    if partner_group and partner_group.name == '위탁운영파트너 그룹':
+                        settlement_method = '후불정산'
+                        # 보험료 설정 가져오기
+                        claim_amount_str = request.form.get('claim_amount', '').strip()
+                        if claim_amount_str:
+                            try:
+                                claim_amount = int(claim_amount_str)
+                            except ValueError:
+                                claim_amount = 9500  # 기본값
+                        else:
+                            claim_amount = 9500  # 기본값
+                except Exception:
+                    settlement_method = '포인트'
+                    claim_amount = 0
+
                 member = Member(
                     partner_group_id=partner_group_id_int,
                     username=username,
@@ -2595,9 +2962,11 @@ def register():
                     email=email,
                     registration_cert_path=registration_cert_path,
                     member_type=member_type,
-                    privacy_agreement=privacy_agreement if member_type == '개인' else False,
+                    privacy_agreement=privacy_agreement,  # 법인/개인 모두 필수
                     approval_status='신청',  # 회원가입 시 항상 '신청'으로 고정
                     role='member',  # 회원가입 시 항상 'member'로 고정 (관리자 페이지 접근 불가)
+                    settlement_method=settlement_method,
+                    claim_amount=claim_amount,  # 보험료 설정
                 )
                 member.set_password(password)
                 db.session.add(member)
@@ -3127,12 +3496,16 @@ def terms():
 def terms_guide_pdf():
     """상품안내 PDF를 브라우저에 표시 (inline)"""
     try:
-        pdf_path = os.path.join(BASE_DIR, '@중고차매매업자자동차보험_상품안내_부산.pdf')
+        # static/guide.pdf 파일 사용 (부산 관련 내용 제거된 버전)
+        pdf_path = os.path.join(BASE_DIR, 'static', 'guide.pdf')
         # 파일 존재 여부 확인
         if not os.path.exists(pdf_path) or not os.path.isfile(pdf_path):
-            flash('안내 문서를 불러올 수 없습니다. 파일이 존재하지 않습니다.', 'danger')
-            return redirect(url_for('terms'))
-        return send_file(pdf_path, mimetype='application/pdf')
+            # 원본 파일이 없으면 원본 PDF 사용
+            pdf_path = os.path.join(BASE_DIR, '@중고차매매업자자동차보험_상품안내_부산.pdf')
+            if not os.path.exists(pdf_path) or not os.path.isfile(pdf_path):
+                flash('안내 문서를 불러올 수 없습니다. 파일이 존재하지 않습니다.', 'danger')
+                return redirect(url_for('terms'))
+        return send_file(pdf_path, mimetype='application/pdf', as_attachment=False)
     except Exception as e:
         try:
             import sys
@@ -3398,7 +3771,20 @@ def retry_insurance_api(application_id):
                 else:
                     application.start_at = datetime.now(KST)
                 if not application.end_at:
-                    application.end_at = application.start_at + timedelta(days=30)
+                    # 종료일은 가입시간의 다음달 동일일 24:00 (즉, 다음달 동일일의 00:00)
+                    try:
+                        next_month_same_day = application.start_at.replace(day=1) + relativedelta(months=1)
+                        try:
+                            next_month_same_day = next_month_same_day.replace(day=application.start_at.day, hour=0, minute=0, second=0, microsecond=0)
+                        except ValueError:
+                            # 다음달에 해당 일자가 없는 경우 마지막 날로 설정
+                            from calendar import monthrange
+                            last_day = monthrange(next_month_same_day.year, next_month_same_day.month)[1]
+                            next_month_same_day = next_month_same_day.replace(day=last_day, hour=0, minute=0, second=0, microsecond=0)
+                        application.end_at = next_month_same_day
+                    except Exception:
+                        # 오류 발생 시 기존 로직 사용
+                        application.end_at = application.start_at + timedelta(days=30)
             # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
             if response_code == '0002':
                 application.status = '가입'
@@ -3515,12 +3901,11 @@ def insurance():
                             try:
                                 row_id = row.id
                                 # 편집 모드에서 온 경우에만 모든 필드 업데이트
-                                if request.form.get('desired_start_date'):
-                                    row.desired_start_date = parse_date(request.form.get('desired_start_date'))
-                                    row.car_plate = request.form.get('car_plate', '').strip()
-                                    row.vin = request.form.get('vin', '').strip()
-                                    row.car_name = request.form.get('car_name', '').strip()
-                                    row.car_registered_at = parse_date(request.form.get('car_registered_at'))
+                                # desired_start_date는 더 이상 수정하지 않음 (열 삭제됨)
+                                row.car_plate = request.form.get('car_plate', '').strip()
+                                row.vin = request.form.get('vin', '').strip()
+                                row.car_name = request.form.get('car_name', '').strip()
+                                row.car_registered_at = parse_date(request.form.get('car_registered_at'))
                                 
                                 # 관리자는 가입시간과 종료시간도 수정 가능
                                 if is_admin:
@@ -3545,8 +3930,10 @@ def insurance():
                                     end_at_str = request.form.get('end_at', '').strip()
                                     if end_at_str:
                                         try:
-                                            # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
-                                            row.end_at = datetime.strptime(end_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                                            # date 형식: 'YYYY-MM-DD' (종료일은 날짜만 입력)
+                                            end_date = datetime.strptime(end_at_str, '%Y-%m-%d').date()
+                                            # 종료일은 해당 날짜의 23:59:59로 설정
+                                            row.end_at = datetime.combine(end_date, datetime.max.time().replace(microsecond=0)).replace(tzinfo=KST)
                                         except (ValueError, TypeError) as e:
                                             try:
                                                 import sys
@@ -3619,6 +4006,9 @@ def insurance():
         
         # 신규 가입
         desired_start_date = parse_date(request.form.get('desired_start_date'))
+        # 가입희망일자가 없으면 현재 날짜 사용
+        if not desired_start_date:
+            desired_start_date = datetime.now(KST).date()
         car_plate = request.form.get('car_plate', '').strip()
         vin = request.form.get('vin', '').strip()
         car_name = request.form.get('car_name', '').strip()
@@ -3626,8 +4016,6 @@ def insurance():
         memo = request.form.get('memo', '').strip()
 
         missing_fields = []
-        if not desired_start_date:
-            missing_fields.append('가입희망일자')
         if not car_plate:
             missing_fields.append('한글차량번호')
         if not vin:
@@ -3700,17 +4088,36 @@ def insurance():
                 pass
             # 중복 체크 실패 시에도 진행 (안전을 위해)
         
+        # 개인 회원인 경우 주민등록번호와 대표자명 자동 추가
+        resident_registration_no = None
+        representative_name = None
+        if member:
+            representative_name = member.representative
+            if getattr(member, 'member_type', None) == '개인':
+                resident_registration_no = member.corporation_number  # 개인인 경우 corporation_number에 주민등록번호 저장
+        
+        # 위탁운영파트너 그룹 여부에 따라 보험료 결정
+        premium_amount = 9500
+        try:
+            if member and member.partner_group and member.partner_group.name == '위탁운영파트너 그룹':
+                premium_amount = member.claim_amount or 9500
+        except Exception:
+            premium_amount = 9500
+        
         try:
             app_row = InsuranceApplication(
                 partner_group_id=partner_group_id,
                 desired_start_date=desired_start_date,
                 insured_code=current_user.business_number or '',
-                contractor_code='부산자동차매매사업자조합',
+                # 전체 계약자코드는 위카모빌리티 주식회사 (755-81-02354)로 고정
+                contractor_code='위카모빌리티 주식회사 (755-81-02354)',
+                resident_registration_no=resident_registration_no,
+                representative_name=representative_name,
                 car_plate=car_plate,
                 vin=vin,
                 car_name=car_name,
                 car_registered_at=car_registered_at,
-                premium=9500,
+                premium=premium_amount,
                 status='신청',
                 memo=memo,
                 created_by_member_id=current_user.id,
@@ -3744,6 +4151,14 @@ def insurance():
                 flash('입력 정보를 확인해주세요.', 'danger')
                 return redirect(url_for('insurance'))
             
+            # 커밋 전 최종 검증
+            try:
+                import sys
+                sys.stderr.write(f"Insurance application (/insurance): Before commit - partner_group_id={app_row.partner_group_id}, desired_start_date={app_row.desired_start_date}, car_plate={app_row.car_plate}\n")
+                sys.stderr.write(f"Session pending: new={len(db.session.new)}, dirty={len(db.session.dirty)}, deleted={len(db.session.deleted)}\n")
+            except Exception:
+                pass
+            
             commit_success = safe_commit()
             
             if not commit_success:
@@ -3757,6 +4172,11 @@ def insurance():
                     if db.session.new:
                         for obj in db.session.new:
                             sys.stderr.write(f"New object: {type(obj).__name__}, id: {getattr(obj, 'id', 'N/A')}\n")
+                            # 객체의 속성 확인
+                            if isinstance(obj, InsuranceApplication):
+                                sys.stderr.write(f"  - partner_group_id: {obj.partner_group_id}\n")
+                                sys.stderr.write(f"  - desired_start_date: {obj.desired_start_date}\n")
+                                sys.stderr.write(f"  - car_plate: {obj.car_plate}\n")
                 except Exception:
                     pass
                 
@@ -3816,9 +4236,16 @@ def insurance():
                     # 기타 오류는 'API오류' 상태로 설정
                     app_row.status = 'API오류'
                 
-                safe_commit()
-                
-                if api_result.get('success'):
+                api_commit_success = safe_commit()
+                if not api_commit_success:
+                    try:
+                        import sys
+                        sys.stderr.write(f"Insurance application (/insurance): API response commit failed for {car_plate}\n")
+                    except Exception:
+                        pass
+                    # API 응답 저장 실패해도 신청은 이미 저장되었으므로 경고만 표시
+                    flash(f'보험 신청이 등록되었습니다. (API 응답 저장 실패)', 'warning')
+                elif api_result.get('success'):
                     flash(f'신청이 등록되었습니다. {api_result.get("response_message", "")}', 'success')
                 else:
                     flash(f'신청이 등록되었습니다. (API 호출 실패: {api_result.get("response_message", "")})', 'warning')
@@ -3832,7 +4259,10 @@ def insurance():
                     if hasattr(app_row, 'api_requested_at'):
                         app_row.api_requested_at = datetime.now(KST)
                     app_row.status = 'API오류'
-                    safe_commit()
+                    try:
+                        safe_commit()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 
@@ -3872,6 +4302,14 @@ def insurance():
     
     # 관리자(admin) 또는 파트너 관리자(partner_admin)는 모든 신청을 볼 수 있음
     is_admin = hasattr(current_user, 'role') and current_user.role in ['admin', 'partner_admin']
+    
+    # 디버깅 로그 추가
+    try:
+        import sys
+        sys.stderr.write(f"Insurance list query - user_id: {current_user.id}, is_admin: {is_admin}, role: {getattr(current_user, 'role', 'None')}\n")
+    except Exception:
+        pass
+    
     if is_admin:
         q = db.session.query(InsuranceApplication)
     else:
@@ -3883,6 +4321,14 @@ def insurance():
 
     try:
         rows = q.order_by(InsuranceApplication.created_at.desc()).all()
+        # 디버깅 로그 추가
+        try:
+            import sys
+            sys.stderr.write(f"Insurance list query result - found {len(rows)} applications\n")
+            for i, row in enumerate(rows[:3]):  # 처음 3개만 로그
+                sys.stderr.write(f"  App {i+1}: ID={row.id}, created_by={row.created_by_member_id}, car_plate={row.car_plate}\n")
+        except Exception:
+            pass
     except Exception as e:
         # 데이터베이스 필드가 없거나 다른 오류 발생 시 빈 리스트 반환
         try:
@@ -4064,6 +4510,7 @@ def insurance_upload():
             
             # partner_group_id 확인 (데이터베이스에서 직접 조회)
             partner_group_id = None
+            member = None
             try:
                 if hasattr(current_user, 'id') and current_user.id:
                     # 데이터베이스에서 최신 정보 조회
@@ -4076,16 +4523,35 @@ def insurance_upload():
             if not partner_group_id:
                 continue  # 파트너그룹이 없으면 건너뛰기
             
+            # 개인 회원인 경우 주민등록번호와 대표자명 자동 추가
+            resident_registration_no = None
+            representative_name = None
+            if member:
+                representative_name = member.representative
+                if getattr(member, 'member_type', None) == '개인':
+                    resident_registration_no = member.corporation_number  # 개인인 경우 corporation_number에 주민등록번호 저장
+            
+            # 위탁운영파트너 그룹 여부에 따라 보험료 결정
+            premium_amount = 9500
+            try:
+                if member and member.partner_group and member.partner_group.name == '위탁운영파트너 그룹':
+                    premium_amount = member.claim_amount or 9500
+            except Exception:
+                premium_amount = 9500
+            
             app_row = InsuranceApplication(
                 partner_group_id=partner_group_id,
                 desired_start_date=desired_start_date,
                 insured_code=current_user.business_number or '',
-                contractor_code='부산자동차매매사업자조합',
+                # 전체 계약자코드는 위카모빌리티 주식회사 (755-81-02354)로 고정
+                contractor_code='위카모빌리티 주식회사 (755-81-02354)',
+                resident_registration_no=resident_registration_no,
+                representative_name=representative_name,
                 car_plate=car_plate,
                 vin=vin,
                 car_name=car_name,
                 car_registered_at=car_registered_at,
-                premium=9500,
+                premium=premium_amount,
                 status='신청',
                 memo=memo,
                 created_by_member_id=current_user.id,
@@ -4629,7 +5095,7 @@ def admin_insurance_overview():
             
             if action == 'save':
                 # 수정 저장
-                app.desired_start_date = parse_date(request.form.get('desired_start_date', '')) or app.desired_start_date
+                # desired_start_date는 더 이상 수정하지 않음 (열 삭제됨)
                 app.car_plate = request.form.get('car_plate', '').strip() or app.car_plate
                 app.vin = request.form.get('vin', '').strip() or app.vin
                 app.car_name = request.form.get('car_name', '').strip() or app.car_name
@@ -4651,11 +5117,14 @@ def admin_insurance_overview():
                     except ValueError:
                         pass
                 
-                # 종료시간 처리
+                # 종료일 처리
                 end_at_str = request.form.get('end_at', '').strip()
                 if end_at_str:
                     try:
-                        app.end_at = datetime.strptime(end_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                        # date 형식: 'YYYY-MM-DD' (종료일은 날짜만 입력)
+                        end_date = datetime.strptime(end_at_str, '%Y-%m-%d').date()
+                        # 종료일은 해당 날짜의 23:59:59로 설정
+                        app.end_at = datetime.combine(end_date, datetime.max.time().replace(microsecond=0)).replace(tzinfo=KST)
                     except ValueError:
                         pass
                 
@@ -4922,9 +5391,9 @@ def admin_settlement_overview():
                 }
             
             settlements_by_group[group_key]['companies'][company_key]['count'] += 1
-            settlements_by_group[group_key]['companies'][company_key]['amount'] += 95000  # 건수 × 95,000원
+            settlements_by_group[group_key]['companies'][company_key]['amount'] += (app.premium or 9500)
             settlements_by_group[group_key]['total_count'] += 1
-            settlements_by_group[group_key]['total_amount'] += 95000
+            settlements_by_group[group_key]['total_amount'] += (app.premium or 9500)
     
     # 전체 합계
     grand_total_count = sum(group['total_count'] for group in settlements_by_group.values())
@@ -5003,9 +5472,9 @@ def admin_settlement_overview_export():
                 }
             
             settlements_by_group[group_key]['companies'][company_key]['count'] += 1
-            settlements_by_group[group_key]['companies'][company_key]['amount'] += 95000
+            settlements_by_group[group_key]['companies'][company_key]['amount'] += (app.premium or 9500)
             settlements_by_group[group_key]['total_count'] += 1
-            settlements_by_group[group_key]['total_amount'] += 95000
+            settlements_by_group[group_key]['total_amount'] += (app.premium or 9500)
     
     # 엑셀 데이터 생성
     grand_total_count = 0
@@ -5249,7 +5718,20 @@ def partner_retry_insurance_api(application_id):
                 else:
                     application.start_at = datetime.now(KST)
                 if not application.end_at:
-                    application.end_at = application.start_at + timedelta(days=30)
+                    # 종료일은 가입시간의 다음달 동일일 24:00 (즉, 다음달 동일일의 00:00)
+                    try:
+                        next_month_same_day = application.start_at.replace(day=1) + relativedelta(months=1)
+                        try:
+                            next_month_same_day = next_month_same_day.replace(day=application.start_at.day, hour=0, minute=0, second=0, microsecond=0)
+                        except ValueError:
+                            # 다음달에 해당 일자가 없는 경우 마지막 날로 설정
+                            from calendar import monthrange
+                            last_day = monthrange(next_month_same_day.year, next_month_same_day.month)[1]
+                            next_month_same_day = next_month_same_day.replace(day=last_day, hour=0, minute=0, second=0, microsecond=0)
+                        application.end_at = next_month_same_day
+                    except Exception:
+                        # 오류 발생 시 기존 로직 사용
+                        application.end_at = application.start_at + timedelta(days=30)
             # 0002는 '가입' 상태로 변경, 나머지는 '신청' 상태 유지
             if response_code == '0002':
                 application.status = '가입'
@@ -5334,6 +5816,21 @@ def partner_insurance():
         pending_virtual_account = None
         point_requirement = 9500
 
+        # 위탁운영파트너 그룹 여부 및 승인 회원 목록
+        is_delegated_group = False
+        delegated_members = []
+        try:
+            partner_group_obj = db.session.get(PartnerGroup, partner_group_id)
+            if partner_group_obj and partner_group_obj.name == '위탁운영파트너 그룹':
+                is_delegated_group = True
+                delegated_members = db.session.query(Member).filter(
+                    Member.partner_group_id == partner_group_id,
+                    Member.approval_status == '승인'
+                ).order_by(Member.company_name).all()
+        except Exception:
+            is_delegated_group = False
+            delegated_members = []
+
         if not is_partner_admin:
             if hasattr(current_user, 'id'):
                 member_for_points = db.session.get(Member, current_user.id)
@@ -5367,6 +5864,9 @@ def partner_insurance():
             if action == 'apply':
                 # 신규 가입 신청 (회원사 및 파트너그룹 관리자 모두 가능)
                 desired_start_date = parse_date(request.form.get('desired_start_date'))
+                # 가입희망일자가 없으면 현재 날짜 사용
+                if not desired_start_date:
+                    desired_start_date = datetime.now(KST).date()
                 car_plate = request.form.get('car_plate', '').strip()
                 vin = request.form.get('vin', '').strip()
                 car_name = request.form.get('car_name', '').strip()
@@ -5377,8 +5877,6 @@ def partner_insurance():
                 insured_code = request.form.get('insured_code', '').strip()
                 
                 missing_fields = []
-                if not desired_start_date:
-                    missing_fields.append('가입희망일자')
                 if not car_plate:
                     missing_fields.append('한글차량번호')
                 if not vin:
@@ -5398,8 +5896,11 @@ def partner_insurance():
                     current_balance = member_for_points.point_balance or 0
                     if member_settlement_method != '후불정산' and current_balance < point_requirement:
                         session['point_top_up_required'] = True
-                        flash('포인트 충전 후 사용해주세요.', 'warning')
+                        flash('포인트가 부족하여 가입이 불가합니다. 포인트를 충전해주세요.', 'warning')
                         creation_allowed = False
+                
+                if not creation_allowed:
+                    return redirect(url_for('partner_insurance'))
                 
                 if creation_allowed:
                     # 중복 가입 체크: 같은 차량번호나 차대번호로 이미 가입되어 있고 종료시간이 남아있는지 확인
@@ -5451,10 +5952,11 @@ def partner_insurance():
                                 insured_code = current_user.business_number or ''
                             else:
                                 insured_code = ''
-                        # 파트너그룹 관리자는 폼에서 입력받은 값 사용 (이미 위에서 가져옴)
+                        # 파트너그룹 관리자는 폼에서 입력받은 값 사용
+                        # (위탁운영파트너 그룹의 경우 상사명 선택 시 value가 사업자번호이므로 그대로 코드로 사용)
                         
-                        # 계약자코드: 파트너그룹 이름
-                        contractor_code = partner_group_name
+                        # 계약자코드: 전체 계약자코드는 위카모빌리티 주식회사 (755-81-02354)로 고정
+                        contractor_code = '위카모빌리티 주식회사 (755-81-02354)'
                         
                         # partner_group_id 유효성 검증
                         if not partner_group_id:
@@ -5476,16 +5978,35 @@ def partner_insurance():
                             flash('파트너그룹 확인 중 오류가 발생했습니다.', 'danger')
                             return redirect(url_for('partner_insurance'))
                         
+                        # 개인 회원인 경우 주민등록번호와 대표자명 자동 추가
+                        resident_registration_no = None
+                        representative_name = None
+                        member_profile = member_for_points if (not is_partner_admin and member_for_points) else None
+                        if member_profile:
+                            representative_name = member_profile.representative
+                            if getattr(member_profile, 'member_type', None) == '개인':
+                                resident_registration_no = member_profile.corporation_number  # 개인인 경우 corporation_number에 주민등록번호 저장
+                        
+                        # 위탁운영파트너 그룹 여부에 따라 보험료 결정
+                        premium_amount = 9500
+                        try:
+                            if partner_group_check and partner_group_check.name == '위탁운영파트너 그룹' and member_profile:
+                                premium_amount = member_profile.claim_amount or 9500
+                        except Exception:
+                            premium_amount = 9500
+                        
                         application = InsuranceApplication(
                             partner_group_id=partner_group_id,
                             desired_start_date=desired_start_date,
                             insured_code=insured_code,  # 피보험자코드
-                            contractor_code=contractor_code,  # 계약자코드: 파트너그룹 이름
+                            contractor_code=contractor_code,  # 계약자코드
+                            resident_registration_no=resident_registration_no,
+                            representative_name=representative_name,
                             car_plate=car_plate,
                             vin=vin,
                             car_name=car_name,
                             car_registered_at=car_registered_at,
-                            premium=9500,  # 보험료 9500원 고정
+                            premium=premium_amount,  # 보험료
                             status='신청',
                             memo=memo,
                             created_by_member_id=current_user.id if not is_partner_admin and hasattr(current_user, 'id') else None,
@@ -5517,6 +6038,10 @@ def partner_insurance():
                         try:
                             import sys
                             sys.stderr.write(f"Insurance application: Adding {car_plate} to session, partner_group_id={partner_group_id}\n")
+                            sys.stderr.write(f"  - desired_start_date: {application.desired_start_date}\n")
+                            sys.stderr.write(f"  - insured_code: {application.insured_code}\n")
+                            sys.stderr.write(f"  - contractor_code: {application.contractor_code}\n")
+                            sys.stderr.write(f"Session pending: new={len(db.session.new)}, dirty={len(db.session.dirty)}, deleted={len(db.session.deleted)}\n")
                         except Exception:
                             pass
                         
@@ -5569,9 +6094,16 @@ def partner_insurance():
                                 else:
                                     application.status = '신청'
                                 
-                                safe_commit()
-                                
-                                if api_result.get('success'):
+                                api_commit_success = safe_commit()
+                                if not api_commit_success:
+                                    try:
+                                        import sys
+                                        sys.stderr.write(f"Insurance application: API response commit failed for {car_plate}\n")
+                                    except Exception:
+                                        pass
+                                    # API 응답 저장 실패해도 신청은 이미 저장되었으므로 경고만 표시
+                                    flash(f'보험 신청이 등록되었습니다. (API 응답 저장 실패)', 'warning')
+                                elif api_result.get('success'):
                                     flash(f'보험 신청이 등록되었습니다. {api_result.get("response_message", "")}', 'success')
                                 else:
                                     flash(f'보험 신청이 등록되었습니다. (API 호출 실패: {api_result.get("response_message", "")})', 'warning')
@@ -5585,7 +6117,10 @@ def partner_insurance():
                                     if hasattr(application, 'api_requested_at'):
                                         application.api_requested_at = datetime.now(KST)
                                     application.status = 'API오류'
-                                    safe_commit()
+                                    try:
+                                        safe_commit()
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     pass
                                 
@@ -5647,19 +6182,38 @@ def partner_insurance():
                                 else:
                                     insured_code = current_user.business_number or ''
                                 
-                                # 계약자코드: 파트너그룹 이름
-                                contractor_code = partner_group_name
+                                # 계약자코드: 전체 계약자코드는 위카모빌리티 주식회사 (755-81-02354)로 고정
+                                contractor_code = partner_group_name  # Excel 템플릿 요구사항에 맞춰 파트너그룹 이름 사용 유지
+                                
+                                # 개인 회원인 경우 주민등록번호와 대표자명 자동 추가
+                                resident_registration_no = None
+                                representative_name = None
+                                member_profile = member_for_points if (not is_partner_admin and member_for_points) else None
+                                if member_profile:
+                                    representative_name = member_profile.representative
+                                    if getattr(member_profile, 'member_type', None) == '개인':
+                                        resident_registration_no = member_profile.corporation_number  # 개인인 경우 corporation_number에 주민등록번호 저장
+                                
+                                # 위탁운영파트너 그룹 여부에 따라 보험료 결정
+                                premium_amount = 9500
+                                try:
+                                    if partner_group and partner_group.name == '위탁운영파트너 그룹' and member_for_points:
+                                        premium_amount = member_for_points.claim_amount or 9500
+                                except Exception:
+                                    premium_amount = 9500
                                 
                                 application = InsuranceApplication(
                                     partner_group_id=partner_group_id,
                                     desired_start_date=desired_start_date,
                                     insured_code=insured_code,
                                     contractor_code=contractor_code,
+                                    resident_registration_no=resident_registration_no,
+                                    representative_name=representative_name,
                                     car_plate=car_plate,
                                     vin=str(row.get('차대번호', '')).strip() or None,
                                     car_name=str(row.get('차량명', '')).strip() or None,
                                     car_registered_at=parse_date(str(row.get('차량등록일자', ''))),
-                                    premium=9500,
+                                    premium=premium_amount,
                                     status='신청',
                                     memo=str(row.get('비고', '')).strip() or None,
                                     created_by_member_id=current_user.id if not is_partner_admin else None,
@@ -5791,7 +6345,7 @@ def partner_insurance():
                             elif action == 'save':
                                 try:
                                     app_id = application.id
-                                    application.desired_start_date = parse_date(request.form.get('desired_start_date'))
+                                    # desired_start_date는 더 이상 수정하지 않음 (열 삭제됨)
                                     application.car_plate = request.form.get('car_plate', '').strip()
                                     application.vin = request.form.get('vin', '').strip()
                                     application.car_name = request.form.get('car_name', '').strip()
@@ -5821,8 +6375,10 @@ def partner_insurance():
                                         end_at_str = request.form.get('end_at', '').strip()
                                         if end_at_str:
                                             try:
-                                                # datetime-local 형식: 'YYYY-MM-DDTHH:MM'
-                                                application.end_at = datetime.strptime(end_at_str, '%Y-%m-%dT%H:%M').replace(tzinfo=KST)
+                                                # date 형식: 'YYYY-MM-DD' (종료일은 날짜만 입력)
+                                                end_date = datetime.strptime(end_at_str, '%Y-%m-%d').date()
+                                                # 종료일은 해당 날짜의 23:59:59로 설정 (24:00는 다음날 00:00이므로)
+                                                application.end_at = datetime.combine(end_date, datetime.max.time().replace(microsecond=0)).replace(tzinfo=KST)
                                             except (ValueError, TypeError) as e:
                                                 try:
                                                     import sys
@@ -6021,14 +6577,16 @@ def partner_insurance():
                              start_date=start_date,
                              end_date=end_date,
                              edit_id=edit_id,
-                            current_user=current_user if not is_partner_admin else None,
-                            member_point_balance=available_points,
-                            member_total_deposit=member_total_deposit,
-                            member_recent_deposits=member_recent_deposits,
-                            pending_virtual_account=pending_virtual_account,
+                             current_user=current_user if not is_partner_admin else None,
+                             member_point_balance=available_points,
+                             member_total_deposit=member_total_deposit,
+                             member_recent_deposits=member_recent_deposits,
+                             pending_virtual_account=pending_virtual_account,
                              member_settlement_method=member_settlement_method,
                              insufficient_points=show_point_modal,
-                            point_requirement=point_requirement)
+                             point_requirement=point_requirement,
+                             is_delegated_group=is_delegated_group,
+                             delegated_members=delegated_members)
         
     except Exception as e:
         try:
@@ -7135,10 +7693,26 @@ def partner_admin_member_approval():
         
         partner_group_id = session.get('partner_group_id')
         partner_group_name = session.get('partner_group_name')
+
+        # 위탁운영파트너 그룹 여부 확인
+        is_delegated_group = False
+        delegated_group_name = '위탁운영파트너 그룹'
+        if partner_group_id:
+            try:
+                pg = db.session.get(PartnerGroup, partner_group_id)
+                if pg and pg.name == delegated_group_name:
+                    is_delegated_group = True
+            except Exception:
+                is_delegated_group = False
         
         if request.method == 'POST':
             action = request.form.get('action')
             member_id = request.form.get('member_id')
+
+            # 위탁운영파트너 그룹은 회원가입승인을 관리자페이지에서만 운영
+            if is_delegated_group and action in ['add', 'save', 'delete', 'upload']:
+                flash('위탁운영파트너 그룹의 회원가입승인은 관리자페이지에서만 가능합니다.', 'warning')
+                return redirect(url_for('partner_admin_member_approval'))
             
             # 회원추가
             if action == 'add':
@@ -7152,6 +7726,7 @@ def partner_admin_member_approval():
                 phone = request.form.get('phone', '').strip()
                 mobile = request.form.get('mobile', '').strip()
                 email = request.form.get('email', '').strip()
+                member_type = request.form.get('member_type', '법인').strip() or '법인'
                 approval_status = request.form.get('approval_status', '신청').strip()
                 memo = request.form.get('memo', '').strip()
                 settlement_method = request.form.get('settlement_method', '포인트').strip() or '포인트'
@@ -7160,6 +7735,8 @@ def partner_admin_member_approval():
                 
                 if not company_name or not username or not password or not business_number:
                     flash('상사명, 아이디, 패스워드, 사업자번호는 필수입니다.', 'warning')
+                elif member_type == '개인' and not corporation_number:
+                    flash('개인 회원의 경우 주민등록번호는 필수입니다.', 'warning')
                 else:
                     # 중복 확인 (파트너그룹 내에서)
                     existing = db.session.query(Member).filter(
@@ -7185,7 +7762,7 @@ def partner_admin_member_approval():
                                 approval_status=approval_status,
                                 role='member',
                                 memo=memo,
-                                member_type='법인',  # 기본값: 법인
+                                member_type=member_type,
                                 privacy_agreement=False,  # 기본값: False
                                 settlement_method=settlement_method
                             )
@@ -7894,6 +8471,12 @@ def admin_members():
                     m.email = request.form.get('email', '').strip()
                     m.approval_status = request.form.get('approval_status', '신청')
                     m.role = request.form.get('role', m.role or 'member')
+                    m.member_type = request.form.get('member_type', m.member_type or '법인')
+                    claim_amount_str = request.form.get('claim_amount', '').replace(',', '').strip()
+                    try:
+                        m.claim_amount = int(claim_amount_str) if claim_amount_str else 0
+                    except ValueError:
+                        pass
                     m.memo = request.form.get('memo', '').strip()
                     
                     # 사업자등록증 파일 업로드 처리
@@ -8022,6 +8605,26 @@ def admin_members():
                                 pass
                             flash('사업자등록증 파일 업로드 중 오류가 발생했습니다.', 'warning')
                     
+                    # 위탁운영파트너 그룹 여부에 따라 대금정산방법 및 보험료 결정
+                    settlement_method = '포인트'
+                    claim_amount = 0
+                    try:
+                        pg = db.session.get(PartnerGroup, partner_group_id_int)
+                        if pg and pg.name == '위탁운영파트너 그룹':
+                            settlement_method = '후불정산'
+                            # 청구금액(보험료) 가져오기
+                            claim_amount_str = request.form.get('claim_amount', '').strip()
+                            if claim_amount_str:
+                                try:
+                                    claim_amount = int(claim_amount_str)
+                                except ValueError:
+                                    claim_amount = 9500  # 기본값
+                            else:
+                                claim_amount = 9500  # 기본값
+                    except Exception:
+                        settlement_method = '포인트'
+                        claim_amount = 0
+
                     nm = Member(
                         partner_group_id=partner_group_id_int,
                         username=username,
@@ -8038,6 +8641,8 @@ def admin_members():
                         registration_cert_path=registration_cert_path,
                         approval_status=approval_status,
                         role=role,
+                        settlement_method=settlement_method,
+                        claim_amount=claim_amount,  # 보험료 설정
                     )
                     nm.set_password(password)
                     db.session.add(nm)
@@ -8160,14 +8765,22 @@ def admin_insurance():
                     flash('비고가 저장되었습니다.', 'success')
             elif action == 'save':
                 # 편집 모드에서 저장
-                row.desired_start_date = parse_date(request.form.get('desired_start_date'))
+                # desired_start_date는 더 이상 수정하지 않음 (열 삭제됨)
                 row.car_plate = request.form.get('car_plate', '').strip()
                 row.vin = request.form.get('vin', '').strip()
                 row.car_name = request.form.get('car_name', '').strip()
                 row.car_registered_at = parse_date(request.form.get('car_registered_at'))
                 start_at_was_none = row.start_at is None
                 row.start_at = parse_datetime(request.form.get('start_at')) # 가입시간 수정 추가
-                row.end_at = parse_datetime(request.form.get('end_at'))   # 종료시간 수정 추가
+                # 종료일은 date 형식으로 파싱 (날짜만 입력)
+                end_at_str = request.form.get('end_at', '').strip()
+                if end_at_str:
+                    try:
+                        end_date = datetime.strptime(end_at_str, '%Y-%m-%d').date()
+                        # 종료일은 해당 날짜의 23:59:59로 설정
+                        row.end_at = datetime.combine(end_date, datetime.max.time().replace(microsecond=0)).replace(tzinfo=KST)
+                    except (ValueError, TypeError):
+                        pass
                 row.memo = request.form.get('memo', '').strip()
                 # 보험증권 정보 저장
                 if hasattr(row, 'insurance_policy_path'):
@@ -8241,6 +8854,7 @@ def admin_insurance():
     for r in rows:
         items.append({
             'id': r.id,
+            'partner_group_name': (r.partner_group.name if hasattr(r, 'partner_group') and r.partner_group else ''),
             'created_by_company': (r.created_by_member.company_name if r.created_by_member else ''),
             'created_at_str': fmt_display(r.created_at),
             'desired_start_date': r.desired_start_date,
@@ -8345,13 +8959,14 @@ def admin_settlement():
             if not by_company[key].get('settlement_method'):
                 by_company[key]['settlement_method'] = settlement_method
         by_company[key]['count'] += 1
+        by_company[key]['amount'] += (r.premium or 9500)
 
     settlements = []
     total_count = 0
     total_amount = 0
     for (company, rep, biz), data in by_company.items():
         count = data['count']
-        amount = count * 9500
+        amount = data['amount']
         total_count += count
         total_amount += amount
         settlements.append({
@@ -8542,13 +9157,18 @@ def admin_invoice_batch():
         company = r.created_by_member.company_name if r.created_by_member else '미상'
         rep = r.created_by_member.representative if r.created_by_member else ''
         biz = r.created_by_member.business_number if r.created_by_member else ''
+        premium = r.premium or 9500
         key = (company, rep, biz)
-        by_company.setdefault(key, 0)
-        by_company[key] += 1
+        if key not in by_company:
+            by_company[key] = {'count': 0, 'unit_premium': premium}
+        by_company[key]['count'] += 1
+        # 만약 다른 보험료가 섞여도, 최초 보험료를 기준으로 사용 (요구사항: 건수 × 보험료)
 
     invoices = []
-    for (company, rep, biz), count in by_company.items():
-        amount = count * 9500
+    for (company, rep, biz), data in by_company.items():
+        count = data['count']
+        unit_premium = data['unit_premium'] or 9500
+        amount = count * unit_premium
         invoices.append({
             'company': company,
             'representative': rep,

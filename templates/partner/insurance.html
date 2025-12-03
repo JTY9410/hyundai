@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}책임보험가입 - 현대해상30일책임보험가입{% endblock %}
+{% block title %}책임보험가입 - 중고차매매업자 1개월 책임보험{% endblock %}
 
 {% block content %}
 <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 py-8">
@@ -105,26 +105,38 @@
         
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">가입희망일자 <span class="text-red-500">*</span></label>
-            <input type="date" name="desired_start_date" required
-                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-          </div>
-          
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">피보험자코드</label>
-            <input type="text" name="insured_code" id="insured_code_input"
-                   value="{% if current_user and current_user.is_authenticated %}{{ current_user.business_number or '' }}{% endif %}" 
-                   {% if not is_partner_admin %}readonly{% endif %}
-                   class="w-full px-3 py-2 border border-gray-300 rounded-lg {% if not is_partner_admin %}bg-gray-100 text-gray-600{% endif %}"
-                   title="{% if is_partner_admin %}피보험자코드를 입력하세요{% else %}로그인한 사업자의 사업자번호가 자동으로 입력됩니다{% endif %}">
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              피보험자코드 (사업자번호) <span class="text-red-500">*</span>
+            </label>
+            {% if is_delegated_group and is_partner_admin %}
+              <select name="insured_code" id="insured_code_input"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required>
+                <option value="">상사명을 선택하세요</option>
+                {% for m in delegated_members %}
+                  <option value="{{ m.business_number }}">
+                    {{ m.company_name }} ({{ m.business_number }})
+                  </option>
+                {% endfor %}
+              </select>
+              <p class="mt-1 text-xs text-gray-500">
+                위탁운영파트너 그룹의 승인된 회원 상사명에서 선택하면, 해당 상사의 사업자등록번호가 피보험자코드로 자동 설정됩니다.
+              </p>
+            {% else %}
+              <input type="text" name="insured_code" id="insured_code_input"
+                     value="{% if current_user and current_user.is_authenticated %}{{ current_user.business_number or '' }}{% endif %}" 
+                     {% if not is_partner_admin %}readonly{% endif %}
+                     class="w-full px-3 py-2 border border-gray-300 rounded-lg {% if not is_partner_admin %}bg-gray-100 text-gray-600{% endif %}"
+                     title="{% if is_partner_admin %}피보험자코드를 입력하세요{% else %}로그인한 사업자의 사업자번호가 자동으로 입력됩니다{% endif %}">
+            {% endif %}
           </div>
           
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">계약자코드</label>
             <input type="text" name="contractor_code" 
-                   value="{{ partner_group_name }}" readonly
+                   value="위카모빌리티 주식회사 (755-81-02354)" readonly
                    class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
-                   title="파트너그룹 이름이 자동으로 입력됩니다">
+                   title="계약자코드는 위카모빌리티 주식회사 (755-81-02354)로 고정됩니다">
           </div>
           
           <div class="md:col-span-2 lg:col-span-1">
@@ -193,12 +205,13 @@
             <tr>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[50px]">순</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">신청시간</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">가입희망일자</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">가입시간</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">종료시간</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">종료일</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">가입상태</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">피보험자코드</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">계약자코드</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">주민등록번호</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[100px]">대표자명</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[110px]">한글차량번호</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">차대번호</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">차량명</th>
@@ -227,11 +240,6 @@
                   {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="date" name="desired_start_date" 
-                         value="{{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '' }}"
-                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                </td>
-                <td class="px-4 py-3 whitespace-nowrap">
                   {% if user_is_admin or is_partner_admin %}
                     <input type="datetime-local" name="start_at" 
                            value="{{ app.start_at.strftime('%Y-%m-%dT%H:%M') if app.start_at else '' }}"
@@ -242,11 +250,11 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   {% if user_is_admin or is_partner_admin %}
-                    <input type="datetime-local" name="end_at" 
-                           value="{{ app.end_at.strftime('%Y-%m-%dT%H:%M') if app.end_at else '' }}"
+                    <input type="date" name="end_at" 
+                           value="{{ app.end_at.strftime('%Y-%m-%d') if app.end_at else '' }}"
                            class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                   {% else %}
-                    <span class="text-sm text-gray-900">{{ app.end_at.strftime('%Y-%m-%d %H:%M:%S') if app.end_at else '-' }}</span>
+                    <span class="text-sm text-gray-900">{{ app.end_at.strftime('%Y-%m-%d') if app.end_at else '-' }}</span>
                   {% endif %}
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -258,6 +266,8 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.insured_code or '-' }}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.contractor_code or '-' }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.resident_registration_no|mask_rrn if app.resident_registration_no else '-' }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.representative_name or '-' }}</td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="text" name="car_plate" value="{{ app.car_plate or '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
@@ -275,7 +285,9 @@
                          value="{{ app.car_registered_at.strftime('%Y-%m-%d') if app.car_registered_at else '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">9,500원</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                  {{ "{:,.0f}".format(app.premium or 9500) }}원
+                </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm">
                   {% if app.status == '신청' %}
                     <span class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">신청</span>
@@ -335,13 +347,10 @@
                 {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                {{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '-' }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.start_at.strftime('%Y-%m-%d %H:%M:%S') if app.start_at else '-' }}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                {{ app.end_at.strftime('%Y-%m-%d %H:%M:%S') if app.end_at else '-' }}
+                {{ app.end_at.strftime('%Y-%m-%d') if app.end_at else '-' }}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm">
                 {% if app.start_at %}
@@ -423,7 +432,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="17" class="px-4 py-8 text-center text-gray-500">
+              <td colspan="18" class="px-4 py-8 text-center text-gray-500">
                 <i class="bi bi-inbox text-4xl mb-2 block"></i>
                 신청 내역이 없습니다.
               </td>

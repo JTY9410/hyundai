@@ -1,51 +1,182 @@
-{% extends 'base.html' %}
-{% block title %}책임보험약관{% endblock %}
+{% extends "base.html" %}
+
+{% block title %}가입자 안내 - 중고차매매업자 1개월 책임보험{% endblock %}
+
 {% block content %}
 <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 py-8 animate-fade-in">
   <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
     <!-- Header -->
     <div class="mb-6 flex items-center justify-between animate-scale-in flex-wrap gap-4">
       <div>
-        <h1 class="text-3xl font-bold gradient-text mb-2">책임보험 약관 및 안내</h1>
-        <p class="text-gray-600 font-medium">중고차 매매업자 자동차보험 약관 및 상품 안내 자료를 확인하실 수 있습니다</p>
+        <h1 class="text-3xl font-bold gradient-text mb-2">중고차매매업자 자동차보험 가입자 안내</h1>
+        <p class="text-gray-600 font-medium">현대해상 중고차매매업자 1개월 책임보험 상품 안내</p>
       </div>
-      <a href="{{ url_for('dashboard') }}" class="btn-modern btn-secondary">
-        <i class="bi bi-arrow-left mr-2"></i>대시보드로
-      </a>
+      {% if current_user.is_authenticated %}
+        <a href="{% if current_user.role == 'admin' %}{{ url_for('dashboard') }}{% else %}{{ url_for('partner_dashboard') }}{% endif %}" class="btn-modern btn-secondary">
+          <i class="bi bi-arrow-left mr-2"></i>대시보드로
+        </a>
+      {% endif %}
     </div>
 
-    <!-- PDF Viewer Card -->
-    <div class="glass rounded-3xl shadow-2xl p-6 border border-white/50 backdrop-blur-xl mb-6 animate-scale-in">
-      <div class="flex items-center mb-4">
-        <div class="bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 p-3 rounded-xl shadow-lg mr-3">
-          <i class="bi bi-file-earmark-pdf text-white text-xl"></i>
+    <!-- 중고차매매업자 자동차보험이란? -->
+    <div class="glass rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-xl mb-6 animate-scale-in">
+      <div class="flex items-center mb-6">
+        <div class="bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 p-3 rounded-xl shadow-lg mr-3">
+          <i class="bi bi-info-circle text-white text-2xl"></i>
         </div>
-        <h2 class="text-xl font-bold text-gray-900">상품 안내</h2>
+        <h2 class="text-2xl font-bold text-gray-900">중고차매매업자 자동차보험이란?</h2>
       </div>
-      <div class="w-full h-[80vh] rounded-2xl overflow-hidden border-2 border-gray-200/50 shadow-inner bg-white/50 backdrop-blur-sm">
-        <object data="{{ url_for('terms_guide_pdf') }}" type="application/pdf" class="w-full h-full">
-          <div class="flex flex-col items-center justify-center h-full p-8 text-center bg-gradient-to-br from-gray-50 to-gray-100">
-            <div class="bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full p-8 mb-6 shadow-lg">
-              <i class="bi bi-file-earmark-pdf text-6xl text-indigo-600"></i>
-            </div>
-            <p class="text-gray-800 text-lg font-semibold mb-4">PDF를 표시할 수 없습니다.</p>
-            <p class="text-gray-600 mb-6">아래 버튼을 클릭해 다운로드하시거나 PDF 뷰어로 열어주세요.</p>
-            <a href="{{ url_for('terms_guide_pdf') }}" class="inline-flex items-center px-6 py-3.5 bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-medium transform hover:-translate-y-1 hover:scale-[1.02] active:scale-95">
-              <i class="bi bi-box-arrow-up-right mr-2"></i>상품안내 PDF 열기
-            </a>
-          </div>
-        </object>
+      <div class="space-y-4 text-gray-700 leading-relaxed">
+        <p class="text-lg">
+          중고차매매업자가 판매용 중고자동차를 이동운전하는 동안 발생할 수 있는 대물 사고에 대한 법률상 손해배상책임을 보장하는 보험입니다.
+        </p>
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+          <p class="font-semibold text-blue-900 mb-2">법적 의무 가입 보험</p>
+          <p class="text-sm text-blue-800">
+            자동차관리법에 따라 중고차매매업자는 판매용 중고자동차에 대한 책임보험 가입이 의무화되어 있습니다.
+          </p>
+        </div>
       </div>
     </div>
 
-    <!-- Download Button -->
-    <div class="flex justify-end animate-scale-in">
-      <a href="{{ url_for('terms_policy_download') }}" class="inline-flex items-center px-6 py-3.5 bg-gradient-to-r from-emerald-500 via-green-600 to-teal-600 hover:from-emerald-600 hover:via-green-700 hover:to-teal-700 text-white rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold transform hover:-translate-y-1 hover:scale-[1.02] active:scale-95">
-        <i class="bi bi-download mr-2 text-xl"></i>약관 PDF 다운로드
-      </a>
+    <!-- 가입 대상 -->
+    <div class="glass rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-xl mb-6 animate-scale-in">
+      <div class="flex items-center mb-6">
+        <div class="bg-gradient-to-br from-green-500 via-green-600 to-emerald-600 p-3 rounded-xl shadow-lg mr-3">
+          <i class="bi bi-people text-white text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-900">가입 대상</h2>
+      </div>
+      <div class="space-y-3">
+        <div class="flex items-start">
+          <i class="bi bi-check-circle-fill text-green-600 text-xl mr-3 mt-1"></i>
+          <div>
+            <h3 class="font-semibold text-gray-900 mb-1">중고자동차 매매업자</h3>
+            <p class="text-gray-700">자동차관리법에 따라 등록된 중고자동차 매매업체</p>
+          </div>
+        </div>
+        <div class="flex items-start">
+          <i class="bi bi-check-circle-fill text-green-600 text-xl mr-3 mt-1"></i>
+          <div>
+            <h3 class="font-semibold text-gray-900 mb-1">판매용 중고자동차 보유 업체</h3>
+            <p class="text-gray-700">매매를 목적으로 중고자동차를 보유하고 있는 사업자</p>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- 보장 담보 -->
+    <div class="glass rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-xl mb-6 animate-scale-in">
+      <div class="flex items-center mb-6">
+        <div class="bg-gradient-to-br from-purple-500 via-purple-600 to-indigo-600 p-3 rounded-xl shadow-lg mr-3">
+          <i class="bi bi-shield-check text-white text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-900">보장 담보</h2>
+      </div>
+      
+      <div class="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-xl p-6 mb-4">
+        <h3 class="text-xl font-bold text-purple-900 mb-3">대물배상</h3>
+        <p class="text-gray-800 mb-4">
+          판매용 중고자동차의 매매를 위하여 피보험자동차를 <span class="font-semibold text-purple-700">이동운전</span>하는 동안에 발생한 사고로 인해 
+          다른 사람의 재물을 없애거나 훼손하여 법률상 손해배상책임을 짐으로써 입은 손해를 보상합니다.
+        </p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-lg p-6">
+        <h4 class="font-bold text-gray-900 mb-3 flex items-center">
+          <i class="bi bi-info-circle text-blue-600 mr-2"></i>
+          이동운전의 정의
+        </h4>
+        <div class="space-y-2 text-gray-700 text-sm">
+          <p class="flex items-start">
+            <span class="text-blue-600 mr-2">•</span>
+            <span>판매용 중고자동차의 매매를 위하여 상품화를 목적으로 피보험자동차를 정비소로 이동시키거나 정비 후 사업장으로 이동시키기 위해 운행하는 것</span>
+          </p>
+          <p class="flex items-start">
+            <span class="text-blue-600 mr-2">•</span>
+            <span>판매용 중고자동차를 매수하려는 자의 차량확인 요청이 있는 경우 피보험자동차를 요청장소로 이동시키거나 확인 후 사업장으로 이동시키기 위해 운행하는 것</span>
+          </p>
+          <p class="flex items-start">
+            <span class="text-blue-600 mr-2">•</span>
+            <span class="font-semibold">도로(도로교통법 제2조 제1호에 의한 도로)에서 피보험자동차를 운행하는 경우를 말합니다</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 보험료 및 보장기간 -->
+    <div class="glass rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-xl mb-6 animate-scale-in">
+      <div class="flex items-center mb-6">
+        <div class="bg-gradient-to-br from-orange-500 via-orange-600 to-red-600 p-3 rounded-xl shadow-lg mr-3">
+          <i class="bi bi-calendar-check text-white text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-900">보장기간</h2>
+      </div>
+      
+      <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
+        <h3 class="text-lg font-bold text-blue-900 mb-3">보장기간</h3>
+        <div class="flex items-baseline">
+          <span class="text-4xl font-bold text-blue-600">1</span>
+          <span class="text-xl text-gray-700 ml-2">개월</span>
+        </div>
+        <p class="text-sm text-gray-600 mt-2">가입일로부터 1개월간 보장</p>
+      </div>
+    </div>
+
+    <!-- 가입해야 하는 이유 -->
+    <div class="glass rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-xl mb-6 animate-scale-in">
+      <div class="flex items-center mb-6">
+        <div class="bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 p-3 rounded-xl shadow-lg mr-3">
+          <i class="bi bi-lightbulb text-white text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-900">이 보험을 가입해야 하는 이유</h2>
+      </div>
+      
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="bg-white rounded-xl p-6 border border-indigo-100 hover:shadow-lg transition-shadow">
+          <div class="bg-indigo-100 rounded-full w-12 h-12 flex items-center justify-center mb-4">
+            <i class="bi bi-shield-fill-check text-indigo-600 text-xl"></i>
+          </div>
+          <h3 class="font-bold text-gray-900 mb-2">법에 따른 의무보험 가입</h3>
+          <p class="text-sm text-gray-600">자동차관리법에 따른 법적 의무사항을 준수합니다</p>
+        </div>
+        
+        <div class="bg-white rounded-xl p-6 border border-indigo-100 hover:shadow-lg transition-shadow">
+          <div class="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mb-4">
+            <i class="bi bi-hand-thumbs-up-fill text-green-600 text-xl"></i>
+          </div>
+          <h3 class="font-bold text-gray-900 mb-2">사고 보상 및 피해자 보상 대행</h3>
+          <p class="text-sm text-gray-600">사고 발생 시 신속한 보상 처리를 지원합니다</p>
+        </div>
+        
+        <div class="bg-white rounded-xl p-6 border border-indigo-100 hover:shadow-lg transition-shadow">
+          <div class="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mb-4">
+            <i class="bi bi-calendar-check-fill text-blue-600 text-xl"></i>
+          </div>
+          <h3 class="font-bold text-gray-900 mb-2">한번 가입으로 1개월간 보장</h3>
+          <p class="text-sm text-gray-600">간편한 가입 절차로 한 달간 안심할 수 있습니다</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 문의 안내 -->
+    <div class="glass rounded-3xl shadow-2xl p-8 border border-white/50 backdrop-blur-xl animate-scale-in">
+      <div class="text-center">
+        <div class="inline-flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 rounded-full p-4 mb-4">
+          <i class="bi bi-telephone-fill text-gray-700 text-3xl"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-900 mb-2">문의하기</h2>
+        <p class="text-gray-600 mb-4">보험 가입 관련 문의사항이 있으시면 언제든지 연락주세요</p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a href="tel:1544-5286" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold">
+            <i class="bi bi-telephone-fill mr-2"></i>
+            1544-5286
+          </a>
+          <span class="text-gray-500">평일 09:00 - 18:00</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 {% endblock %}
-
-

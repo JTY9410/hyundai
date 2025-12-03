@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}현대해상30일책임보험가입{% endblock %}</title>
+  <title>{% block title %}중고차매매업자 1개월 책임보험{% endblock %}</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Bootstrap Icons CDN (Tailwind와 호환되므로 유지) -->
@@ -580,8 +580,9 @@
           <div class="p-2 rounded mr-3 transition-all duration-300">
             <img src="{{ url_for('static', filename='logo.png') }}" alt="logo" class="h-8 w-8 object-contain">
           </div>
-          <div>
-            <span class="text-xl font-semibold text-[#1a1a1a] tracking-tight">현대해상30일책임보험가입</span>
+          <div class="text-xl font-semibold text-[#1a1a1a] tracking-tight">
+            <div>중고차매매업자</div>
+            <div>1개월 책임보험</div>
           </div>
         </a>
         <div class="flex items-center space-x-2 sm:space-x-3">
@@ -625,7 +626,7 @@
             {% endif %}
             <a href="{{ url_for('terms') }}" class="btn-modern btn-secondary">
               <i class="bi bi-file-text"></i>
-              <span class="hidden sm:inline ml-2">약관</span>
+              <span class="hidden sm:inline ml-2">가입자 안내</span>
             </a>
             {% if user_role == 'admin' %}
               <a href="{{ url_for('admin_home') }}" class="btn-modern btn-primary">
@@ -700,24 +701,24 @@
   <!-- Footer -->
   <footer class="bg-white border-t border-[#e5e5e5] mt-auto">
     <div class="container mx-auto px-4 py-6">
-      <div class="text-center text-sm text-gray-600">
-        <p class="mb-2">
-          <span class="font-semibold text-gray-800">위카모빌리티주식회사</span>가 개발했습니다.
-        </p>
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-xs text-gray-500">
-          <span class="flex items-center">
-            <i class="bi bi-geo-alt mr-1"></i>
-            경기도 용인시 중부대로 242 A동1층 1F01~1F03호
-          </span>
-          <span class="hidden sm:inline">|</span>
-          <span class="flex items-center">
-            <i class="bi bi-telephone mr-1"></i>
-            전화: 031-548-4929
-          </span>
-          <span class="hidden sm:inline">|</span>
-          <span class="flex items-center">
-            <i class="bi bi-printer mr-1"></i>
-            팩스: 031-548-4969
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div class="text-center text-sm text-gray-600 md:text-left">
+          <p class="mb-2 text-xs text-gray-500">
+            보험가입 총괄대리점 : <span class="font-semibold text-gray-800">(주)엘케이네트워크</span>
+            <span>(보험대리점등록번호 제2010061256호 / 사업자등록번호 107-87-38040)</span>
+          </p>
+          <p class="mb-2 text-xs text-gray-500">
+            사이트 운영회사 : <span class="font-semibold text-gray-800">위카모빌리티(주)</span>
+            <span>(사업자등록번호 755-81-02354 / 문의 1544-5286)</span>
+          </p>
+        </div>
+        <div class="flex flex-col items-center md:items-end space-y-2">
+          <div class="flex items-center space-x-3">
+            <img src="{{ url_for('static', filename='lk.png') }}" alt="엘케이네트워크 로고" class="h-8 object-contain">
+            <img src="{{ url_for('static', filename='wecar.png') }}" alt="위카모빌리티 로고" class="h-16 object-contain">
+          </div>
+          <span class="text-xs text-gray-400 mt-1 text-center md:text-right">
+            © {{ current_year }} 현대해상 중고차매매업자 1개월 책임보험 전산. All rights reserved.
           </span>
         </div>
       </div>
@@ -730,41 +731,47 @@
   // 파트너그룹 로고를 네비게이션에 적용 (전체관리자/비로그인 상태에서는 기본 로고)
   document.addEventListener('DOMContentLoaded', function() {
     const navLogo = document.querySelector('nav img[alt="logo"]');
+    if (!navLogo) return;
+    
+    // 기본 로고 경로 설정
+    const defaultLogoPath = "{{ url_for('static', filename='logo.png') }}";
     
     // 세션 또는 현재 사용자 정보에서 파트너그룹 정보 가져오기
     {% if session.get('user_type') == 'partner_admin' %}
       // 파트너그룹 로고 적용
       const partnerGroupId = '{{ session.get("partner_group_id", "") }}';
-      if (partnerGroupId && navLogo) {
-        const partnerLogoPath = `partner_logos/group_${partnerGroupId}_logo.png`;
+      if (partnerGroupId) {
+        const partnerLogoPath = "{{ url_for('static', filename='partner_logos/group_') }}" + partnerGroupId + "_logo.png";
         const testImg = new Image();
         testImg.onload = function() {
-          navLogo.src = "{{ url_for('static', filename='') }}" + partnerLogoPath;
+          navLogo.src = partnerLogoPath;
         };
         testImg.onerror = function() {
-          navLogo.src = "{{ url_for('static', filename='logo.png') }}";
+          navLogo.src = defaultLogoPath;
         };
-        testImg.src = "{{ url_for('static', filename='') }}" + partnerLogoPath;
+        testImg.src = partnerLogoPath;
+      } else {
+        navLogo.src = defaultLogoPath;
       }
     {% elif current_user.is_authenticated and current_user.partner_group %}
       // 파트너그룹 로고 적용
       const partnerGroupId = '{{ current_user.partner_group_id if current_user.partner_group_id else "" }}';
-      if (partnerGroupId && navLogo) {
-        const partnerLogoPath = `partner_logos/group_${partnerGroupId}_logo.png`;
+      if (partnerGroupId) {
+        const partnerLogoPath = "{{ url_for('static', filename='partner_logos/group_') }}" + partnerGroupId + "_logo.png";
         const testImg = new Image();
         testImg.onload = function() {
-          navLogo.src = "{{ url_for('static', filename='') }}" + partnerLogoPath;
+          navLogo.src = partnerLogoPath;
         };
         testImg.onerror = function() {
-          navLogo.src = "{{ url_for('static', filename='logo.png') }}";
+          navLogo.src = defaultLogoPath;
         };
-        testImg.src = "{{ url_for('static', filename='') }}" + partnerLogoPath;
+        testImg.src = partnerLogoPath;
+      } else {
+        navLogo.src = defaultLogoPath;
       }
     {% else %}
       // 전체관리자 또는 비로그인 상태 - 기본 로고 사용
-      if (navLogo) {
-        navLogo.src = "{{ url_for('static', filename='logo.png') }}";
-      }
+      navLogo.src = defaultLogoPath;
     {% endif %}
   });
   </script>
