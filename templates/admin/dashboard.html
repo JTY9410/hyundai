@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}전체대시보드 - 현대해상중고차매매업자 1개월책임보험전산{% endblock %}
+{% block title %}전체대시보드 - 현대해상중고차상품화 책임보험전산{% endblock %}
 {% block content %}
 <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 py-8">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -11,7 +11,7 @@
         </div>
       </div>
       <h1 class="text-4xl font-bold gradient-text mb-2">전체대시보드</h1>
-      <p class="text-gray-600 font-medium">현대해상중고차매매업자 1개월책임보험전산 관리시스템</p>
+      <p class="text-gray-600 font-medium">현대해상 자동차상품화 책임보험전산 관리시스템</p>
     </div>
 
     <!-- Flash Messages -->
@@ -87,6 +87,21 @@
           <p class="text-sm text-gray-600 mb-4">시스템 관리자 계정을 관리합니다</p>
           <a href="{{ url_for('admin_administrators') }}" 
              class="inline-flex items-center px-4 py-2 bg-gradient-to-r from-red-500 to-pink-600 text-white font-medium rounded-lg hover:from-red-600 hover:to-pink-700 transition-all duration-200">
+            <i class="bi bi-arrow-right mr-2"></i>이동
+          </a>
+        </div>
+      </div>
+
+      <!-- 보험료설정 -->
+      <div class="glass rounded-2xl p-6 border border-white/50 backdrop-blur-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 animate-scale-in">
+        <div class="text-center">
+          <div class="bg-gradient-to-br from-orange-500 to-amber-600 p-4 rounded-xl mx-auto w-16 h-16 flex items-center justify-center mb-4">
+            <i class="bi bi-currency-dollar text-white text-2xl"></i>
+          </div>
+          <h3 class="text-lg font-bold text-gray-800 mb-2">보험료설정</h3>
+          <p class="text-sm text-gray-600 mb-4">차종별 보험료를 설정합니다</p>
+          <a href="{{ url_for('admin_premium_settings') }}" 
+             class="inline-flex items-center px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 text-white font-medium rounded-lg hover:from-orange-600 hover:to-amber-700 transition-all duration-200">
             <i class="bi bi-arrow-right mr-2"></i>이동
           </a>
         </div>

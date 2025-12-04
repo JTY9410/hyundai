@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}책임보험가입 - 중고차매매업자 1개월 책임보험{% endblock %}
+{% block title %}책임보험가입 - 자동차상품화 책임보험{% endblock %}
 
 {% block content %}
 <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 py-8">
@@ -106,6 +106,23 @@
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
+              차종분류 <span class="text-red-500">*</span>
+            </label>
+            <select name="vehicle_type_id" id="vehicle_type_select" 
+                    onchange="updatePremiumAmount()"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required>
+              <option value="">차종을 선택하세요</option>
+              {% for ps in premium_settings %}
+                <option value="{{ ps.id }}" data-premium="{{ ps.premium_amount }}">
+                  {{ ps.vehicle_type }} ({{ "{:,}".format(ps.premium_amount) }}원)
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
               피보험자코드 (사업자번호) <span class="text-red-500">*</span>
             </label>
             {% if is_delegated_group and is_partner_admin %}
@@ -204,20 +221,19 @@
           <thead class="bg-gradient-to-r from-slate-800 via-indigo-700 to-sky-600 text-white">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[50px]">순</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[100px]">차종분류</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">신청시간</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">가입시간</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">종료일</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">가입상태</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">피보험자코드</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">계약자코드</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">주민등록번호</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[100px]">대표자명</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">주민등록번호/<br>법인번호</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[100px]">대표자</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[110px]">한글차량번호</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[140px]">차대번호</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">차량명</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">차량등록일자</th>
               <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[90px]">보험료</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[100px]">현재상태</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[100px]">보험증권</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[150px]">비고</th>
               <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider sticky top-0 bg-transparent z-10 min-w-[120px]">작업</th>
@@ -236,6 +252,9 @@
                 <input type="hidden" name="app_id" value="{{ app.id }}">
                 
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ loop.index }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  {{ app.vehicle_type.vehicle_type if app.vehicle_type else '-' }}
+                </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
                 </td>
@@ -257,17 +276,22 @@
                     <span class="text-sm text-gray-900">{{ app.end_at.strftime('%Y-%m-%d') if app.end_at else '-' }}</span>
                   {% endif %}
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm">
-                  {% if app.start_at %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">가입완료</span>
-                  {% else %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">미가입</span>
-                  {% endif %}
-                </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.insured_code or '-' }}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.contractor_code or '-' }}</td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.resident_registration_no|mask_rrn if app.resident_registration_no else '-' }}</td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ app.representative_name or '-' }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  {% if app.created_by_member %}
+                    {% if app.created_by_member.member_type == '개인사업자' %}
+                      {{ app.created_by_member.corporation_number[:6] + '******' if app.created_by_member.corporation_number and app.created_by_member.corporation_number|length >= 7 else '-' }}
+                    {% else %}
+                      {{ app.created_by_member.corporation_number or '-' }}
+                    {% endif %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  {{ app.created_by_member.representative if app.created_by_member else '-' }}
+                </td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="text" name="car_plate" value="{{ app.car_plate or '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
@@ -288,35 +312,17 @@
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
                   {{ "{:,.0f}".format(app.premium or 9500) }}원
                 </td>
-                <td class="px-4 py-3 whitespace-nowrap text-sm">
-                  {% if app.status == '신청' %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">신청</span>
-                  {% elif app.status == '가입' %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">가입</span>
-                  {% elif app.status == '종료' %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">종료</span>
-                  {% elif app.status == 'API오류' %}
-                    <div class="flex items-center gap-2">
-                      <span class="px-2 py-1 text-xs font-semibold bg-red-100 text-red-800 rounded-full">API오류</span>
-                      <form method="post" action="{{ url_for('partner_retry_insurance_api', application_id=app.id) }}" class="inline">
-                        <button type="submit" class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors duration-200" title="API 재호출">
-                          재호출
-                        </button>
-                      </form>
-                    </div>
-                  {% else %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">{{ app.status }}</span>
-                  {% endif %}
-                  {% set api_msg = app.api_response_message|default('') %}
-                  {% if api_msg %}
-                    <span class="text-xs text-gray-600 mt-1 block" title="응답코드: {{ app.api_response_code|default('-') }}">
-                      {{ api_msg }}
-                    </span>
-                  {% endif %}
-                </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                  {% if app.insurance_policy_path or app.insurance_policy_url %}
-                    <span class="text-green-600">첨부됨</span>
+                  {% if app.insurance_policy_url %}
+                    <a href="{{ app.insurance_policy_url }}" target="_blank" 
+                       class="text-blue-600 hover:text-blue-800 inline-flex items-center">
+                      <i class="bi bi-file-earmark-pdf mr-1"></i>보기
+                    </a>
+                  {% elif app.insurance_policy_path %}
+                    <a href="{{ url_for('serve_insurance_policy', insurance_id=app.id) }}" target="_blank" 
+                       class="text-blue-600 hover:text-blue-800 inline-flex items-center">
+                      <i class="bi bi-file-earmark-pdf mr-1"></i>보기
+                    </a>
                   {% else %}
                     <span class="text-gray-400">-</span>
                   {% endif %}
@@ -343,6 +349,9 @@
               {% else %}
               <!-- View Mode -->
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ loop.index }}</td>
+              <td class="px-4 py-3 text-sm text-gray-900">
+                {{ app.vehicle_type.vehicle_type if app.vehicle_type else '-' }}
+              </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
               </td>
@@ -352,33 +361,29 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.end_at.strftime('%Y-%m-%d') if app.end_at else '-' }}
               </td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm">
-                {% if app.start_at %}
-                  <span class="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">가입완료</span>
-                {% else %}
-                  <span class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">미가입</span>
-                {% endif %}
-              </td>
                 <td class="px-4 py-3 text-sm text-gray-900">{{ app.insured_code or '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-900">{{ app.contractor_code or '-' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">
+                  {% if app.created_by_member %}
+                    {% if app.created_by_member.member_type == '개인사업자' %}
+                      {{ app.created_by_member.corporation_number[:6] + '******' if app.created_by_member.corporation_number and app.created_by_member.corporation_number|length >= 7 else '-' }}
+                    {% else %}
+                      {{ app.created_by_member.corporation_number or '-' }}
+                    {% endif %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-900">
+                  {{ app.created_by_member.representative if app.created_by_member else '-' }}
+                </td>
                 <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ app.car_plate or '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-900 break-all">{{ app.vin or '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-900">{{ app.car_name or '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-900">
                   {{ app.car_registered_at.strftime('%Y-%m-%d') if app.car_registered_at else '-' }}
                 </td>
-                <td class="px-4 py-3 text-sm text-right text-gray-900">9,500원</td>
-                <td class="px-4 py-3 text-sm">
-                  {% if app.status == '신청' %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">신청</span>
-                  {% elif app.status == '가입' %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">가입</span>
-                  {% elif app.status == '종료' %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">종료</span>
-                  {% else %}
-                    <span class="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">{{ app.status }}</span>
-                  {% endif %}
-                </td>
+                <td class="px-4 py-3 text-sm text-right text-gray-900">{{ "{:,}".format(app.premium) if app.premium else '0' }}원</td>
                 <td class="px-4 py-3 text-sm text-gray-500">
                   {% if app.insurance_policy_url %}
                     <a href="{{ app.insurance_policy_url }}" target="_blank" 
@@ -432,7 +437,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="18" class="px-4 py-8 text-center text-gray-500">
+              <td colspan="17" class="px-4 py-8 text-center text-gray-500">
                 <i class="bi bi-inbox text-4xl mb-2 block"></i>
                 신청 내역이 없습니다.
               </td>
@@ -671,6 +676,15 @@ function hideNewForm() {
   const form = document.getElementById('new-form');
   if (form) {
     form.style.display = 'none';
+  }
+}
+
+function updatePremiumAmount() {
+  const select = document.getElementById('vehicle_type_select');
+  if (select && select.selectedIndex > 0) {
+    const selectedOption = select.options[select.selectedIndex];
+    const premium = selectedOption.getAttribute('data-premium');
+    console.log('선택된 차종의 보험료:', premium);
   }
 }
 

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}전체책임보험현황 - 현대해상중고차매매업자 1개월책임보험전산{% endblock %}
+{% block title %}전체책임보험현황 - 현대해상자동차상품화 책임보험전산{% endblock %}
 {% block content %}
 <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 py-8">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -114,7 +114,6 @@
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[150px]">파트너그룹(상호)</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">상사명</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">신청시간</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">가입희망일자</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">가입시간</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">종료시간</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[110px]">가입상태</th>
@@ -157,11 +156,6 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
-                </td>
-                <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="date" name="desired_start_date" 
-                         value="{{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '' }}"
-                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="datetime-local" name="start_at" 
@@ -265,9 +259,6 @@
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                {{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '-' }}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.start_at.strftime('%Y-%m-%d %H:%M:%S') if app.start_at else '-' }}

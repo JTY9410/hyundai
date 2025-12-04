@@ -8,7 +8,7 @@ set -e
 IMAGE_NAME="hyundai-insurance"
 TAG="local"
 
-echo "🔨 현대해상중고차매매업자 1개월책임보험전산 Docker 이미지 빌드 시작..."
+echo "🔨 현대해상30일책임보험전산 Docker 이미지 빌드 시작..."
 echo "📦 이미지명: ${IMAGE_NAME}:${TAG}"
 echo ""
 

@@ -59,18 +59,42 @@
         <div class="sticky top-0 bg-gradient-to-r from-green-500 to-emerald-600 text-white p-6 rounded-t-xl">
           <div class="flex justify-between items-center">
             <h2 class="text-2xl font-bold">회원추가</h2>
-            <button type="button" onclick="document.getElementById('add-member-modal').classList.add('hidden')"
+            <button type="button" onclick="closeAddMemberModal()"
                     class="text-white hover:text-gray-200 text-2xl font-bold">
               <i class="bi bi-x"></i>
             </button>
           </div>
         </div>
-        <form method="post" class="p-6">
+        
+        <!-- 에러 메시지 영역 -->
+        <div id="add-member-error" class="hidden mx-6 mt-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-800 rounded">
+          <div class="flex items-start">
+            <i class="bi bi-exclamation-circle-fill mr-3 mt-0.5"></i>
+            <span id="add-member-error-message"></span>
+          </div>
+        </div>
+        
+        <form method="post" enctype="multipart/form-data" class="p-6" id="add-member-form">
           <input type="hidden" name="action" value="add">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">상사명 *</label>
               <input type="text" name="company_name" required
+                     class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">직책 *</label>
+              <input type="text" name="position" required
+                     class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">성명 *</label>
+              <input type="text" name="full_name" required
+                     class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">종사원증번호/대표사원증번호 *</label>
+              <input type="text" name="license_number" required
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
             <div>
@@ -83,18 +107,19 @@
               <input type="password" name="password" required
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
+            <!-- 회원유형 -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">회원유형 *</label>
               <div class="flex items-center space-x-4">
                 <label class="inline-flex items-center space-x-1">
-                  <input type="radio" name="member_type" value="법인" checked
-                         class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
-                  <span class="text-sm text-gray-700">법인</span>
+                  <input type="radio" name="member_type" value="법인사업자" checked
+                         class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500" onchange="updateModalCorporationLabel()">
+                  <span class="text-sm text-gray-700">법인사업자</span>
                 </label>
                 <label class="inline-flex items-center space-x-1">
-                  <input type="radio" name="member_type" value="개인"
-                         class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
-                  <span class="text-sm text-gray-700">개인</span>
+                  <input type="radio" name="member_type" value="개인사업자"
+                         class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500" onchange="updateModalCorporationLabel()">
+                  <span class="text-sm text-gray-700">개인사업자</span>
                 </label>
               </div>
             </div>
@@ -109,10 +134,15 @@
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">자동차관리업 등록번호 *</label>
+              <input type="text" name="car_dealership_number" required
+                     class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">
-                법인번호/주민등록번호 <span class="text-red-500" id="corp-required-indicator" style="display:none">*</span>
+                <span id="modal-corporation-label-text">법인번호</span> <span class="text-red-500">*</span>
               </label>
-              <input type="text" name="corporation_number" id="modal_corporation_number"
+              <input type="text" name="corporation_number" id="modal_corporation_number" required
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
             <div>
@@ -135,6 +165,45 @@
               <input type="email" name="email"
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
             </div>
+
+            <!-- 사업자등록증 첨부 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">사업자등록증 첨부</label>
+              <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-green-400 transition-colors duration-200" id="modal-file-upload-area">
+                <div class="space-y-1 text-center">
+                  <i class="bi bi-cloud-upload text-3xl text-gray-400" id="modal-upload-icon"></i>
+                  <div class="flex text-sm text-gray-600">
+                    <label for="modal-file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-green-600 hover:text-green-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-green-500">
+                      <span>파일 선택</span>
+                      <input id="modal-file-upload" name="registration_cert" type="file" class="sr-only" accept=".pdf,.jpg,.jpeg,.png">
+                    </label>
+                    <p class="pl-1">또는 드래그하여 놓기</p>
+                  </div>
+                  <p class="text-xs text-gray-500" id="modal-file-info">PDF, JPG, PNG 파일 (최대 10MB)</p>
+                  <p class="text-xs text-green-600 font-medium hidden" id="modal-selected-file"></p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 종사원/대표사원증 첨부 -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">종사원/대표사원증 첨부</label>
+              <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-green-400 transition-colors duration-200" id="modal-license-upload-area">
+                <div class="space-y-1 text-center">
+                  <i class="bi bi-cloud-upload text-3xl text-gray-400" id="modal-license-upload-icon"></i>
+                  <div class="flex text-sm text-gray-600">
+                    <label for="modal-license-file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-green-600 hover:text-green-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-green-500">
+                      <span>파일 선택</span>
+                      <input id="modal-license-file-upload" name="license_attachment" type="file" class="sr-only" accept=".pdf,.jpg,.jpeg,.png">
+                    </label>
+                    <p class="pl-1">또는 드래그하여 놓기</p>
+                  </div>
+                  <p class="text-xs text-gray-500" id="modal-license-file-info">PDF, JPG, PNG 파일 (최대 10MB)</p>
+                  <p class="text-xs text-green-600 font-medium hidden" id="modal-license-selected-file"></p>
+                </div>
+              </div>
+            </div>
+
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">승인상태</label>
               <select name="approval_status"
@@ -156,11 +225,11 @@
             </div>
           </div>
           <div class="mt-6 flex justify-end space-x-3">
-            <button type="button" onclick="document.getElementById('add-member-modal').classList.add('hidden')"
+            <button type="button" onclick="closeAddMemberModal()"
                     class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
               취소
             </button>
-            <button type="submit"
+            <button type="submit" id="add-member-submit-btn"
                     class="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg">
               <i class="bi bi-check mr-2"></i>추가
             </button>
@@ -178,10 +247,14 @@
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[50px]">순</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[90px]">회원유형</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">상사명</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">직책</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">성명</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[150px]">종사원증번호</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">아이디</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">패스워드</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[200px]">주소</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">사업자번호</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">자동차관리업<br>등록번호</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">법인번호/주민등록번호</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[100px]">대표자</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[110px]">연락처</th>
@@ -191,6 +264,7 @@
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[90px]">권한</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[130px]">대금정산방법</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">사업자등록증</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[130px]">종사원증</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[150px]">비고</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">작업</th>
             </tr>
@@ -205,42 +279,80 @@
                 <input type="hidden" name="member_id" value="{{ member.id }}">
                 
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ loop.index }}</td>
+                <!-- 회원유형 -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <select name="member_type" id="edit-member-type-{{ member.id }}" onchange="updateEditCorporationLabel({{ member.id }})"
+                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                    <option value="법인사업자" {% if member.member_type == '법인사업자' %}selected{% endif %}>법인사업자</option>
+                    <option value="개인사업자" {% if member.member_type == '개인사업자' %}selected{% endif %}>개인사업자</option>
+                  </select>
+                </td>
+                <!-- 상사명 -->
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="text" name="company_name" value="{{ member.company_name }}" required
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 직책 -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <input type="text" name="position" value="{{ member.position or '' }}" required
+                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                </td>
+                <!-- 성명 -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <input type="text" name="full_name" value="{{ member.full_name or '' }}" required
+                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                </td>
+                <!-- 종사원증번호 -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <input type="text" name="license_number" value="{{ member.license_number or '' }}" required
+                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                </td>
+                <!-- 아이디 -->
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="text" name="username" value="{{ member.username }}" required
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 패스워드 -->
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="password" name="password" placeholder="변경시에만 입력"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 주소 -->
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="text" name="address" value="{{ member.address or '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 사업자번호 -->
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="text" name="business_number" value="{{ member.business_number or '' }}"
+                  <input type="text" name="business_number" value="{{ member.business_number or '' }}" required
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 자동차관리업 등록번호 -->
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="text" name="corporation_number" value="{{ member.corporation_number or '' }}"
+                  <input type="text" name="car_dealership_number" value="{{ member.car_dealership_number or '' }}" required
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 법인번호/주민등록번호 -->
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="text" name="representative" value="{{ member.representative or '' }}"
+                  <input type="text" name="corporation_number" value="{{ member.corporation_number or '' }}" required
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 대표자 -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <input type="text" name="representative" value="{{ member.representative or '' }}" required
+                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                </td>
+                <!-- 연락처 -->
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="text" name="phone" value="{{ member.phone or '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 휴대폰 -->
                 <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="text" name="mobile" value="{{ member.mobile or '' }}"
+                  <input type="text" name="mobile" value="{{ member.mobile or '' }}" required
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
+                <!-- 이메일 -->
                 <td class="px-4 py-3 whitespace-nowrap">
                   <input type="email" name="email" value="{{ member.email or '' }}"
                          class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
@@ -270,14 +382,30 @@
                   <div class="space-y-2">
                     {% if member.registration_cert_path %}
                       <div class="text-xs text-gray-600 mb-1">
-                        <a href="{{ url_for('uploaded_file', filename=member.registration_cert_path.split('/')[-1]) }}" 
+                        <a href="{{ url_for('uploaded_file', filename=member.registration_cert_path.split('/')[-1]) }}"
                            class="text-blue-600 hover:text-blue-800 underline">
                           현재 파일 보기
                         </a>
                       </div>
                     {% endif %}
-                    <input type="file" name="registration_cert" accept=".pdf,.jpg,.jpeg,.png" 
+                    <input type="file" name="registration_cert" accept=".pdf,.jpg,.jpeg,.png"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                           form="edit-form-{{ member.id }}">
+                    <p class="text-xs text-gray-400">PDF, JPG, PNG (최대 10MB)</p>
+                  </div>
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-center text-sm text-gray-500">
+                  <div class="space-y-2">
+                    {% if member.license_attachment_path %}
+                      <div class="text-xs text-gray-600 mb-1">
+                        <a href="{{ url_for('uploaded_file', filename=member.license_attachment_path.split('/')[-1]) }}"
+                           class="text-blue-600 hover:text-blue-800 underline">
+                          현재 파일 보기
+                        </a>
+                      </div>
+                    {% endif %}
+                    <input type="file" name="license_attachment" accept=".pdf,.jpg,.jpeg,.png"
+                           class="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
                            form="edit-form-{{ member.id }}">
                     <p class="text-xs text-gray-400">PDF, JPG, PNG (최대 10MB)</p>
                   </div>
@@ -304,16 +432,17 @@
               {% else %}
               <!-- View Mode -->
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ loop.index }}</td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.member_type or '법인' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.member_type or '법인사업자' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ member.company_name }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.position or '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.full_name or '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.license_number or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.username }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">••••••••</td>
               <td class="px-4 py-3 text-sm text-gray-900 break-words">{{ member.address or '-' }}</td>
-            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.business_number or '-' }}</td>
-            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-              {{ member.member_type or '법인' }}
-            </td>
-            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.corporation_number or '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.business_number or '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.car_dealership_number or '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.corporation_number or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.representative or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.phone or '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ member.mobile or '-' }}</td>
@@ -322,7 +451,14 @@
                 {% if member.approval_status == '승인' %}
                   <span class="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">승인</span>
                 {% else %}
-                  <span class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">신청</span>
+                  <form method="post" class="inline">
+                    <input type="hidden" name="action" value="approve">
+                    <input type="hidden" name="member_id" value="{{ member.id }}">
+                    <button type="submit"
+                            class="px-2 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full hover:bg-green-100 hover:text-green-800 transition-colors">
+                      신청
+                    </button>
+                  </form>
                 {% endif %}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -341,10 +477,22 @@
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-center">
                 {% if member.registration_cert_path %}
-                  <a href="{{ url_for('uploaded_file', filename=member.registration_cert_path.split('/')[-1]) }}" 
+                  <a href="{{ url_for('uploaded_file', filename=member.registration_cert_path.split('/')[-1]) }}"
                      class="inline-flex items-center px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-md transition-colors duration-200"
                      title="{{ member.registration_cert_path.split('/')[-1] }}">
                     <i class="bi bi-file-earmark-pdf mr-1"></i>
+                    보기
+                  </a>
+                {% else %}
+                  <span class="text-gray-400 text-xs">미첨부</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-center">
+                {% if member.license_attachment_path %}
+                  <a href="{{ url_for('uploaded_file', filename=member.license_attachment_path.split('/')[-1]) }}"
+                     class="inline-flex items-center px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-medium rounded-md transition-colors duration-200"
+                     title="{{ member.license_attachment_path.split('/')[-1] }}">
+                    <i class="bi bi-file-earmark-person mr-1"></i>
                     보기
                   </a>
                 {% else %}
@@ -360,15 +508,11 @@
                      title="수정">
                     <i class="bi bi-pencil mr-1"></i>수정
                   </a>
-                  <form method="post" class="inline-block" onsubmit="return confirm('정말 삭제하시겠습니까?');">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="member_id" value="{{ member.id }}">
-                    <button type="submit" 
-                            class="inline-flex items-center px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 transition-colors"
-                            title="삭제">
-                      <i class="bi bi-trash mr-1"></i>삭제
-                    </button>
-                  </form>
+                  <button type="button" onclick="deleteMember({{ member.id }}, '{{ member.company_name }}')"
+                          class="inline-flex items-center px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600 transition-colors"
+                          title="삭제">
+                    <i class="bi bi-trash mr-1"></i>삭제
+                  </button>
                 </div>
                 {% else %}
                 <span class="text-xs text-gray-400">관리자페이지에서만 수정/삭제 가능</span>
@@ -391,6 +535,149 @@
   </div>
 </div>
 <script>
+// 회원추가 모달 관련 함수들
+function closeAddMemberModal() {
+  const modal = document.getElementById('add-member-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+  
+  // 폼 초기화
+  const form = document.getElementById('add-member-form');
+  if (form) {
+    form.reset();
+  }
+  
+  // 에러 메시지 숨기기
+  const errorDiv = document.getElementById('add-member-error');
+  if (errorDiv) {
+    errorDiv.classList.add('hidden');
+  }
+  
+  // 라벨 초기화 (법인사업자가 기본값이므로 법인번호로)
+  const corpLabel = document.getElementById('modal-corporation-label-text');
+  const corpInput = document.getElementById('modal_corporation_number');
+  if (corpLabel) {
+    corpLabel.textContent = '법인번호';
+  }
+  if (corpInput) {
+    corpInput.setAttribute('placeholder', '법인번호를 입력하세요');
+  }
+  
+  // 파일 업로드 영역 초기화
+  const selectedFile = document.getElementById('modal-selected-file');
+  if (selectedFile) {
+    selectedFile.classList.add('hidden');
+    selectedFile.textContent = '';
+  }
+  const licenseSelectedFile = document.getElementById('modal-license-selected-file');
+  if (licenseSelectedFile) {
+    licenseSelectedFile.classList.add('hidden');
+    licenseSelectedFile.textContent = '';
+  }
+  
+  const uploadArea = document.getElementById('modal-file-upload-area');
+  if (uploadArea) {
+    uploadArea.classList.remove('border-green-500', 'bg-green-50');
+  }
+  const licenseUploadArea = document.getElementById('modal-license-upload-area');
+  if (licenseUploadArea) {
+    licenseUploadArea.classList.remove('border-green-500', 'bg-green-50');
+  }
+  
+  const uploadIcon = document.getElementById('modal-upload-icon');
+  if (uploadIcon) {
+    uploadIcon.classList.remove('text-green-500');
+    uploadIcon.classList.add('text-gray-400');
+  }
+  const licenseUploadIcon = document.getElementById('modal-license-upload-icon');
+  if (licenseUploadIcon) {
+    licenseUploadIcon.classList.remove('text-green-500');
+    licenseUploadIcon.classList.add('text-gray-400');
+  }
+}
+
+function showAddMemberError(message) {
+  const errorDiv = document.getElementById('add-member-error');
+  const errorMessage = document.getElementById('add-member-error-message');
+  if (errorDiv && errorMessage) {
+    errorMessage.textContent = message;
+    errorDiv.classList.remove('hidden');
+    // 에러 메시지가 보이도록 스크롤
+    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function hideAddMemberError() {
+  const errorDiv = document.getElementById('add-member-error');
+  if (errorDiv) {
+    errorDiv.classList.add('hidden');
+  }
+}
+
+// 회원추가 폼 제출 처리 (AJAX)
+document.addEventListener('DOMContentLoaded', function() {
+  // 페이지 로드 시 법인번호/주민등록번호 라벨 초기화
+  updateModalCorporationLabel();
+  
+  const addMemberForm = document.getElementById('add-member-form');
+  if (addMemberForm) {
+    addMemberForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      hideAddMemberError();
+      
+      const submitBtn = document.getElementById('add-member-submit-btn');
+      const originalBtnText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="bi bi-hourglass-split mr-2 animate-spin"></i>처리 중...';
+      
+      const formData = new FormData(this);
+      
+      fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.text())
+      .then(html => {
+        // HTML 응답에서 flash 메시지 추출
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const flashMessages = doc.querySelectorAll('.p-4.rounded-xl');
+        
+        let hasError = false;
+        let errorMessage = '';
+        
+        flashMessages.forEach(msg => {
+          const text = msg.textContent.trim();
+          if (msg.classList.contains('bg-red-50') || msg.classList.contains('bg-yellow-50')) {
+            hasError = true;
+            errorMessage = text;
+          } else if (msg.classList.contains('bg-green-50')) {
+            // 성공 메시지 - 페이지 새로고침
+            window.location.reload();
+          }
+        });
+        
+        if (hasError) {
+          // 에러 표시
+          showAddMemberError(errorMessage);
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalBtnText;
+        } else {
+          // 응답에 flash 메시지가 없으면 성공으로 간주
+          window.location.reload();
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        showAddMemberError('회원 추가 중 오류가 발생했습니다. 다시 시도해주세요.');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+      });
+    });
+  }
+});
+
 function disableRow(form) {
   try {
     const row = form.closest('tr');
@@ -405,34 +692,268 @@ function disableRow(form) {
   }
 }
 
-// 회원추가 모달에서 회원유형에 따라 법인번호/주민등록번호 필수 여부 제어
-document.addEventListener('DOMContentLoaded', function () {
-  const memberTypeRadios = document.querySelectorAll('input[name="member_type"]');
+// 회원 삭제 함수
+function deleteMember(memberId, companyName) {
+  if (confirm(`정말 "${companyName}" 회원을 삭제하시겠습니까?\n\n삭제된 데이터는 복구할 수 없습니다.`)) {
+    // 폼 생성 및 제출
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = 'delete';
+    form.appendChild(actionInput);
+
+    const memberIdInput = document.createElement('input');
+    memberIdInput.type = 'hidden';
+    memberIdInput.name = 'member_id';
+    memberIdInput.value = memberId;
+    form.appendChild(memberIdInput);
+
+    document.body.appendChild(form);
+    form.submit();
+  }
+}
+
+// 회원추가 모달에서 회원유형에 따라 법인번호/대표자주민등록번호 라벨 변경
+function updateModalCorporationLabel() {
+  const selected = document.querySelector('input[name="member_type"]:checked');
   const corpInput = document.getElementById('modal_corporation_number');
-  const requiredIndicator = document.getElementById('corp-required-indicator');
+  const corpLabel = document.getElementById('modal-corporation-label-text');
 
-  function updateCorpField() {
-    if (!corpInput || !requiredIndicator) return;
-    const selected = document.querySelector('input[name="member_type"]:checked');
-    if (!selected) return;
-
-    if (selected.value === '개인') {
-      corpInput.placeholder = '주민등록번호를 입력하세요';
-      corpInput.required = true;
-      requiredIndicator.style.display = 'inline';
+  // 법인번호/대표자주민등록번호 라벨 변경
+  if (corpLabel && corpInput) {
+    if (selected && selected.value === '개인사업자') {
+      corpLabel.textContent = '대표자주민등록번호';
+      corpInput.setAttribute('placeholder', '대표자주민등록번호를 입력하세요');
     } else {
-      corpInput.placeholder = '';
-      corpInput.required = false;
-      requiredIndicator.style.display = 'none';
+      corpLabel.textContent = '법인번호';
+      corpInput.setAttribute('placeholder', '법인번호를 입력하세요');
+    }
+  }
+}
+
+  // 편집 모드에서 회원유형 변경 시 라벨 업데이트
+  function updateEditCorporationLabel(memberId) {
+    // 현재는 편집 모드에서 회원유형을 변경할 수 없으므로 필요 없음
+    // 필요시 구현
+  }
+
+  // 파일 업로드 처리
+  function handleModalFileSelect(file, isLicenseFile = false) {
+    const prefix = isLicenseFile ? 'modal-license-' : 'modal-';
+    const fileInfo = document.getElementById(`${prefix}file-info`);
+    const selectedFile = document.getElementById(`${prefix}selected-file`);
+    const uploadArea = document.getElementById(`${prefix}file-upload-area`);
+    const uploadIcon = document.getElementById(`${prefix}upload-icon`);
+
+    if (file && fileInfo && selectedFile && uploadArea && uploadIcon) {
+      const fileName = file.name;
+      const fileSize = (file.size / 1024 / 1024).toFixed(2); // MB
+      const fileExt = fileName.split('.').pop().toLowerCase();
+      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
+
+      if (!allowedExts.includes(fileExt)) {
+        alert('PDF, JPG, PNG 파일만 업로드 가능합니다.');
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) { // 10MB
+        alert('파일 크기는 10MB를 초과할 수 없습니다.');
+        return;
+      }
+
+      selectedFile.textContent = `선택된 파일: ${fileName} (${fileSize} MB)`;
+      selectedFile.classList.remove('hidden');
+      uploadArea.classList.add('border-green-500', 'bg-green-50');
+      uploadIcon.classList.remove('text-gray-400');
+      uploadIcon.classList.add('text-green-500');
     }
   }
 
-  memberTypeRadios.forEach(r => {
-    r.addEventListener('change', updateCorpField);
-  });
+  // 회원추가 모달 초기화
+  updateModalCorporationLabel();
 
-  updateCorpField();
+  // 파일 업로드 이벤트 리스너
+  const modalFileInput = document.getElementById('modal-file-upload');
+  if (modalFileInput) {
+    modalFileInput.addEventListener('change', function(e) {
+      if (e.target.files && e.target.files[0]) {
+        handleModalFileSelect(e.target.files[0], false);
+      }
+    });
+  }
+
+  const modalLicenseFileInput = document.getElementById('modal-license-file-upload');
+  if (modalLicenseFileInput) {
+    modalLicenseFileInput.addEventListener('change', function(e) {
+      if (e.target.files && e.target.files[0]) {
+        handleModalFileSelect(e.target.files[0], true);
+      }
+    });
+  }
+
+  // 드래그 앤 드롭 이벤트 - 사업자등록증
+  const modalUploadArea = document.getElementById('modal-file-upload-area');
+  if (modalUploadArea) {
+    modalUploadArea.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.classList.add('border-green-500', 'bg-green-50');
+    });
+
+    modalUploadArea.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.classList.remove('border-green-500', 'bg-green-50');
+    });
+
+    modalUploadArea.addEventListener('drop', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.classList.remove('border-green-500', 'bg-green-50');
+
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        const fileInput = document.getElementById('modal-file-upload');
+        if (fileInput) {
+          fileInput.files = e.dataTransfer.files;
+          handleModalFileSelect(e.dataTransfer.files[0], false);
+        }
+      }
+    });
+  }
+
+  // 드래그 앤 드롭 이벤트 - 종사원증
+  const modalLicenseUploadArea = document.getElementById('modal-license-upload-area');
+  if (modalLicenseUploadArea) {
+    modalLicenseUploadArea.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.classList.add('border-green-500', 'bg-green-50');
+    });
+
+    modalLicenseUploadArea.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.classList.remove('border-green-500', 'bg-green-50');
+    });
+
+    modalLicenseUploadArea.addEventListener('drop', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.classList.remove('border-green-500', 'bg-green-50');
+
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        const fileInput = document.getElementById('modal-license-file-upload');
+        if (fileInput) {
+          fileInput.files = e.dataTransfer.files;
+          handleModalFileSelect(e.dataTransfer.files[0], true);
+        }
+      }
+    });
+  }
+});
+
+// 가입자 안내 팝업 모달 관련 함수들
+function showTermsModal() {
+  console.log('showTermsModal 함수 호출됨'); // 디버깅용 로그
+  const modal = document.getElementById('terms-modal');
+  const modalContent = document.getElementById('modal-content');
+
+  if (!modal) {
+    console.error('terms-modal 요소를 찾을 수 없습니다'); // 디버깅용 로그
+    return;
+  }
+
+  // 모달 표시
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden'; // 배경 스크롤 방지
+  console.log('모달 표시됨'); // 디버깅용 로그
+
+  // terms.html 내용 불러오기
+  fetch('/terms', {
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  })
+  .then(response => response.text())
+  .then(html => {
+    // HTML 파싱하여 본문 내용만 추출
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // body 내용 추출 (헤더, 푸터 제외)
+    const bodyContent = doc.querySelector('.max-w-6xl');
+    if (bodyContent) {
+      modalContent.innerHTML = bodyContent.innerHTML;
+    } else {
+      modalContent.innerHTML = '<div class="text-center text-red-600">내용을 불러오는데 실패했습니다.</div>';
+    }
+  })
+  .catch(error => {
+    console.error('Error loading terms:', error);
+    modalContent.innerHTML = '<div class="text-center text-red-600">내용을 불러오는데 실패했습니다.</div>';
+  });
+}
+
+function closeTermsModal() {
+  const modal = document.getElementById('terms-modal');
+  modal.classList.add('hidden');
+  document.body.style.overflow = ''; // 배경 스크롤 허용
+}
+
+// 가입자 안내 링크에 이벤트 리스너 추가
+document.addEventListener('DOMContentLoaded', function() {
+  const termsLink = document.getElementById('terms-link');
+  if (termsLink) {
+    termsLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      console.log('링크 클릭 이벤트 발생'); // 디버깅용 로그
+      showTermsModal();
+    });
+    console.log('이벤트 리스너 연결됨'); // 디버깅용 로그
+  } else {
+    console.error('terms-link 요소를 찾을 수 없습니다'); // 디버깅용 로그
+  }
+});
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeTermsModal();
+  }
 });
 </script>
+
+<!-- 가입자 안내 팝업 모달 -->
+<div id="terms-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden" style="z-index: 9999;">
+  <div class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+      <!-- 모달 헤더 -->
+      <div class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 flex justify-between items-center">
+        <h3 class="text-xl font-bold">중고차 상품화 책임보험 가입자 안내</h3>
+        <button onclick="closeTermsModal()" class="text-white hover:text-gray-200 text-2xl">&times;</button>
+      </div>
+
+      <!-- 모달 본문 -->
+      <div id="modal-content" class="p-6 overflow-y-auto max-h-[70vh]">
+        <div class="flex items-center justify-center py-12">
+          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <span class="ml-3 text-gray-600">가입자 안내를 불러오는 중...</span>
+        </div>
+      </div>
+
+      <!-- 모달 푸터 -->
+      <div class="bg-gray-50 px-6 py-4 flex justify-end">
+        <button onclick="closeTermsModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+          확인
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 

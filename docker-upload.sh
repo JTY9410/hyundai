@@ -30,7 +30,7 @@ VERSION=$(date '+%Y%m%d-%H%M%S')
 TAG_LATEST="${DOCKER_USERNAME}/${IMAGE_NAME}:latest"
 TAG_VERSION="${DOCKER_USERNAME}/${IMAGE_NAME}:${VERSION}"
 
-echo "🚀 현대해상중고차매매업자 1개월책임보험전산 Docker 이미지 빌드 및 업로드 시작..."
+echo "🚀 현대해상자동차상품화 책임보험전산 Docker 이미지 빌드 및 업로드 시작..."
 echo "📦 이미지명: ${IMAGE_NAME}"
 echo "👤 Docker Hub 사용자: ${DOCKER_USERNAME}"
 echo ""

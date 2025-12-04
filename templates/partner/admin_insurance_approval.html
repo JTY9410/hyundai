@@ -109,7 +109,6 @@
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[50px]">순</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">상사명</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">신청시간</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[120px]">가입희망일자</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">가입시간</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">종료시간</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50/80 z-10 min-w-[140px]">조합승인시간</th>
@@ -141,11 +140,6 @@
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
-                </td>
-                <td class="px-4 py-3 whitespace-nowrap">
-                  <input type="date" name="desired_start_date" 
-                         value="{{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '' }}"
-                         class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {{ app.start_at.strftime('%Y-%m-%d %H:%M:%S') if app.start_at else '-' }}
@@ -223,9 +217,6 @@
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.created_at.strftime('%Y-%m-%d %H:%M:%S') if app.created_at else '-' }}
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                {{ app.desired_start_date.strftime('%Y-%m-%d') if app.desired_start_date else '-' }}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                 {{ app.start_at.strftime('%Y-%m-%d %H:%M:%S') if app.start_at else '-' }}
